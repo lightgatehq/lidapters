@@ -45,8 +45,40 @@ func (a *Adapter) DecodeState(prior *bindings.LedgerState, changes []bindings.Co
 // (Config.StateMode): paranoid runs the reference reducer below verbatim;
 // incremental produces byte-identical output from a carried mirror. See
 // state_strategy.go for the two-mode contract.
+//
+// This is the CHEAP per-ledger path (fullBuild=false): under incremental mode
+// the returned state's Users/PendingUserPositions are left nil (see
+// state_incremental.go's snapshot); under paranoid mode nothing changes, since
+// paranoid has no cheaper path. A caller that needs the complete slices this
+// ledger — checkpoint persistence, cold-start hydration — must call
+// DecodeStateFullAt/DecodeStateFull instead. This is a behavior change from
+// pre-#67 lidapters versions, where every DecodeStateAt call fully
+// materialized both slices regardless of caller need; see issue #67
+// (relay.lightgate.xyz) for the motivating O(total state)-per-ledger cost this
+// closes.
 func (a *Adapter) DecodeStateAt(prior *bindings.LedgerState, changes []bindings.ContractDataChange, ledgerSeq int64, closeTime time.Time) (*bindings.LedgerState, error) {
-	next, _, dirty := a.state.decodeState(prior, changes, ledgerSeq, closeTime)
+	next, _, dirty := a.state.decodeState(prior, changes, ledgerSeq, closeTime, false)
+	a.lastDirty = dirty
+	return next, nil
+}
+
+// DecodeStateFull is DecodeState's full-build counterpart: same pure-reducer
+// contract, but the returned state's Users/PendingUserPositions are always
+// fully materialized (fullBuild=true), regardless of active StateMode. Use at
+// checkpoint/persist boundaries and cold-start hydration — anywhere the
+// complete flat slices are read back (JSON-marshaled to a checkpoint,
+// loadPrior on a reseed) rather than just this ledger's dirty set.
+func (a *Adapter) DecodeStateFull(prior *bindings.LedgerState, changes []bindings.ContractDataChange, ledgerSeq int64) (*bindings.LedgerState, error) {
+	return a.DecodeStateFullAt(prior, changes, ledgerSeq, time.Time{})
+}
+
+// DecodeStateFullAt is DecodeStateAt's full-build counterpart (fullBuild=true):
+// it always fully materializes Users/PendingUserPositions on the returned
+// state, matching every lidapters version before #67's fix. See
+// bindings.FullStateDecoder, the capability interface a host uses to opt into
+// calling this at checkpoint/persist boundaries and cold-start hydration.
+func (a *Adapter) DecodeStateFullAt(prior *bindings.LedgerState, changes []bindings.ContractDataChange, ledgerSeq int64, closeTime time.Time) (*bindings.LedgerState, error) {
+	next, _, dirty := a.state.decodeState(prior, changes, ledgerSeq, closeTime, true)
 	a.lastDirty = dirty
 	return next, nil
 }

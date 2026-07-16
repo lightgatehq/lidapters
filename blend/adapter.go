@@ -30,6 +30,13 @@ var _ bindings.CloseTimeStateDecoder = (*Adapter)(nil)
 // (math.go).
 var _ bindings.DirtyPositionsProvider = (*Adapter)(nil)
 
+// Adapter exposes an explicit full-build decode variant for hosts that need
+// the complete Users/PendingUserPositions slices materialized — checkpoint
+// persistence and cold-start hydration — separately from the cheap per-ledger
+// DecodeStateAt path. See bindings.FullStateDecoder and issue #67
+// (relay.lightgate.xyz).
+var _ bindings.FullStateDecoder = (*Adapter)(nil)
+
 type Adapter struct {
 	cfg Config
 	// contracts is the owned contract-ID set OwnsContract checks. It is
@@ -255,7 +262,10 @@ func (a *Adapter) ProjectPositions(state *bindings.LedgerState, dirty []bindings
 // dirtyPositionRows gathers the raw position rows for exactly the given dirty
 // pairs. When the active strategy implements dirtyUserPositions (incremental
 // mode), each pair is an O(1) cache lookup; otherwise it falls back to a
-// single O(all users) scan of state.Users, matching a pair to its rows.
+// single O(all users) scan of state.Users, matching a pair to its rows. Kept
+// as its own single-pass fallback (rather than looping UserPositions per
+// pair) so the paranoid/no-cache case stays O(all users) total, not
+// O(dirty x all users).
 func (a *Adapter) dirtyPositionRows(state *bindings.LedgerState, dirty []bindings.DirtyPosition) []contracts.UserReservePosition {
 	if lookup, ok := a.state.(dirtyUserPositions); ok {
 		out := make([]contracts.UserReservePosition, 0, len(dirty))
@@ -272,6 +282,40 @@ func (a *Adapter) dirtyPositionRows(state *bindings.LedgerState, dirty []binding
 	out := make([]contracts.UserReservePosition, 0, len(dirty))
 	for _, u := range state.Users {
 		if _, ok := want[dirtyPairKey(u.Address, u.PoolContractID)]; ok {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// UserPositions returns one (address, pool) pair's currently-folded position
+// rows (Archived flag included). When the active state-fold strategy caches
+// per-pair blocks (incremental mode's dirtyUserPositions), this is an O(1)
+// lookup that does NOT require state.Users to be populated — it reads the
+// strategy's own carried cache instead, which is what makes it safe to call on
+// a state returned from the cheap per-ledger DecodeStateAt path (whose
+// Users/PendingUserPositions are left nil; see issue #67, relay.lightgate.xyz).
+// Otherwise (paranoid mode, or any strategy without the cache) it falls back
+// to a single O(all users) scan of state.Users, matching today's behavior —
+// no worse than paranoid's existing O(total state) per-ledger cost, and
+// requires state.Users to actually be populated (true for paranoid, and for
+// any incremental state fetched via DecodeStateFullAt).
+//
+// This is the exported half of the same plumbing ProjectPositions
+// (dirtyPositionRows, above) already uses internally, surfaced for relay-side
+// per-ledger consumers that need the raw rows directly — e.g. the survivingByPair
+// diff basis and Archived-flag lookups in the relay's tombstone/emission path
+// (internal/relay/emission.go) — instead of scanning state.Users themselves.
+func (a *Adapter) UserPositions(state *bindings.LedgerState, address, pool string) []contracts.UserReservePosition {
+	if lookup, ok := a.state.(dirtyUserPositions); ok {
+		return lookup.userPositions(address, pool)
+	}
+	if state == nil {
+		return nil
+	}
+	var out []contracts.UserReservePosition
+	for _, u := range state.Users {
+		if u.Address == address && u.PoolContractID == pool {
 			out = append(out, u)
 		}
 	}

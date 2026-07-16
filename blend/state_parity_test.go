@@ -77,8 +77,12 @@ func (r *parityRun) strategy() *incrementalStrategy {
 // red-check tests need the non-fatal form.
 func (r *parityRun) foldLedger(ledger parityLedger) (equal bool, detail string) {
 	r.t.Helper()
-	pNext, pDeltas, pDirty := r.paranoid.state.decodeState(r.pState, ledger.changes, ledger.seq, ledger.close)
-	iNext, iDeltas, iDirty := r.incremental.state.decodeState(r.iState, ledger.changes, ledger.seq, ledger.close)
+	// fullBuild=true on both sides: the parity gate's invariant is that the
+	// FULL-BUILD path stays byte-identical to paranoid (paranoid ignores the
+	// flag and is always full). Cheap-path (fullBuild=false) behavior is
+	// covered separately by TestIncrementalParity_MixedFullBuildCadence below.
+	pNext, pDeltas, pDirty := r.paranoid.state.decodeState(r.pState, ledger.changes, ledger.seq, ledger.close, true)
+	iNext, iDeltas, iDirty := r.incremental.state.decodeState(r.iState, ledger.changes, ledger.seq, ledger.close, true)
 	r.pState, r.iState = pNext, iNext
 
 	pJSON := mustMarshalState(r.t, pNext)
@@ -762,4 +766,56 @@ func TestIncrementalParity_RedCheck(t *testing.T) {
 			t.Fatalf("red-check failed: a dropped update sailed through the parity gate undetected")
 		}
 	})
+}
+
+// TestIncrementalParity_MixedFullBuildCadence exercises the actual production
+// usage pattern the issue #67 (relay.lightgate.xyz) fix introduces: mostly
+// cheap per-ledger folds (fullBuild=false) with periodic full builds
+// (checkpoint cadence). A plain full-build-every-ledger parity run (fold,
+// above) cannot catch a defect specific to this pattern, so this test asserts
+// two things directly:
+//
+//  1. A cheap ledger's returned state genuinely omits Users/PendingUserPositions
+//     (the O(total state) cost this closes), while its dirty-positions set
+//     still matches paranoid's for that exact ledger — the O(dirty) cache
+//     maintenance that always runs must still be complete and correct even
+//     when the expensive materialization is skipped.
+//  2. Resuming a full build after a run of cheap ledgers reproduces paranoid's
+//     output byte-for-byte — proof that the cache maintenance kept the
+//     incremental mirror consistent throughout the cheap stretch, not just
+//     that it happens to look right on a full build immediately following
+//     every single ledger (which is all the pre-existing gate exercised).
+func TestIncrementalParity_MixedFullBuildCadence(t *testing.T) {
+	t.Parallel()
+	run := newParityRun(t, nil, nil)
+	sequence := syntheticParitySequence(t)
+
+	const checkpointEvery = 3
+	for i, ledger := range sequence {
+		fullBuild := (i+1)%checkpointEvery == 0 || i == len(sequence)-1
+
+		pNext, _, pDirty := run.paranoid.state.decodeState(run.pState, ledger.changes, ledger.seq, ledger.close, true)
+		iNext, _, iDirty := run.incremental.state.decodeState(run.iState, ledger.changes, ledger.seq, ledger.close, fullBuild)
+		run.pState, run.iState = pNext, iNext
+
+		if !reflect.DeepEqual(pDirty, iDirty) {
+			t.Fatalf("ledger %d: dirty-positions mismatch on a %s-path ledger:\nparanoid=%+v\nincremental=%+v",
+				ledger.seq, map[bool]string{true: "full", false: "cheap"}[fullBuild], pDirty, iDirty)
+		}
+
+		if !fullBuild {
+			if iNext.Users != nil || iNext.PendingUserPositions != nil {
+				t.Fatalf("ledger %d: cheap-path build did not skip materialization: users=%d pending=%d",
+					ledger.seq, len(iNext.Users), len(iNext.PendingUserPositions))
+			}
+			continue
+		}
+
+		pJSON := mustMarshalState(t, pNext)
+		iJSON := mustMarshalState(t, iNext)
+		if !bytes.Equal(pJSON, iJSON) {
+			t.Fatalf("ledger %d: full-build state mismatch after a cheap-path stretch:\nparanoid=%s\nincremental=%s",
+				ledger.seq, pJSON, iJSON)
+		}
+	}
 }

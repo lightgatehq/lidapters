@@ -189,6 +189,24 @@ type CloseTimeStateDecoder interface {
 	DecodeStateAt(prior *LedgerState, changes []ContractDataChange, ledgerSeq int64, closeTime time.Time) (*LedgerState, error)
 }
 
+// FullStateDecoder is an additive capability an adapter MAY implement
+// alongside CloseTimeStateDecoder: an explicit full-build variant that always
+// materializes the complete Users/PendingUserPositions slices on the returned
+// state, regardless of the adapter's active fold strategy.
+//
+// It exists because DecodeStateAt's default cost changed (see issue #67,
+// relay.lightgate.xyz): an adapter carrying a persistent per-ledger mirror
+// (blend's incremental state mode) may skip materializing those two slices on
+// an ordinary DecodeStateAt call, since a per-ledger consumer following the
+// dirty-positions set (DirtyPositionsProvider) never reads them. A host that
+// needs the complete slices — writing a fold checkpoint, cold-start hydration,
+// or any other full-state read-back — calls DecodeStateFullAt instead, at
+// exactly the boundaries where that cost is unavoidable, rather than paying it
+// on every ledger.
+type FullStateDecoder interface {
+	DecodeStateFullAt(prior *LedgerState, changes []ContractDataChange, ledgerSeq int64, closeTime time.Time) (*LedgerState, error)
+}
+
 type TransformInput struct {
 	LedgerSeq int64
 	CloseTime time.Time

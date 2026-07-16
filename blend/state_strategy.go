@@ -35,9 +35,19 @@ import (
 // stateStrategy folds one ledger's owned contract_data changes into the next
 // typed LedgerState (plus the in-package silver-debug deltas and the exposed
 // dirty-positions set — see bindings.DirtyPosition). Implementations own the
-// entire chain; DecodeState/DecodeStateAt delegate here blindly.
+// entire chain; DecodeState/DecodeStateAt/DecodeStateFullAt delegate here
+// blindly.
+//
+// fullBuild controls whether the returned LedgerState's Users and
+// PendingUserPositions slices are materialized this call. paranoid ignores it
+// (it has no cheaper path — every call is a full build). incremental honors
+// it: false skips the O(total state) materialization loop and leaves those two
+// slices nil, while still running the O(dirty) cache maintenance that keeps
+// userPositions/ProjectPositions correct; true runs the full materialization,
+// exactly as every call did before this flag existed. See
+// state_incremental.go's snapshot and Adapter.DecodeStateFullAt (state.go).
 type stateStrategy interface {
-	decodeState(prior *bindings.LedgerState, changes []bindings.ContractDataChange, ledgerSeq int64, closeTime time.Time) (*bindings.LedgerState, []typedStateDelta, []bindings.DirtyPosition)
+	decodeState(prior *bindings.LedgerState, changes []bindings.ContractDataChange, ledgerSeq int64, closeTime time.Time, fullBuild bool) (*bindings.LedgerState, []typedStateDelta, []bindings.DirtyPosition)
 }
 
 // dirtyUserPositions is an optional capability a stateStrategy MAY implement:
@@ -61,7 +71,7 @@ type paranoidStrategy struct {
 	adapter *Adapter
 }
 
-func (s *paranoidStrategy) decodeState(prior *bindings.LedgerState, changes []bindings.ContractDataChange, ledgerSeq int64, closeTime time.Time) (*bindings.LedgerState, []typedStateDelta, []bindings.DirtyPosition) {
+func (s *paranoidStrategy) decodeState(prior *bindings.LedgerState, changes []bindings.ContractDataChange, ledgerSeq int64, closeTime time.Time, _ bool) (*bindings.LedgerState, []typedStateDelta, []bindings.DirtyPosition) {
 	next, deltas, dirty := s.adapter.decodeBlendState(prior, changes, ledgerSeq, closeTime)
 	return &next, deltas, dirty
 }

@@ -98,7 +98,7 @@ func newIncrementalStrategy(a *Adapter) *incrementalStrategy {
 	return &incrementalStrategy{adapter: a}
 }
 
-func (s *incrementalStrategy) decodeState(prior *bindings.LedgerState, changes []bindings.ContractDataChange, ledgerSeq int64, closeTime time.Time) (*bindings.LedgerState, []typedStateDelta, []bindings.DirtyPosition) {
+func (s *incrementalStrategy) decodeState(prior *bindings.LedgerState, changes []bindings.ContractDataChange, ledgerSeq int64, closeTime time.Time, fullBuild bool) (*bindings.LedgerState, []typedStateDelta, []bindings.DirtyPosition) {
 	if s.mirror == nil || prior != s.lastOut || s.bisect.reloadEachLedger {
 		// Not a continuation of our own last output: rebuild the mirror from
 		// prior exactly as paranoid would. One O(total state) ledger, then the
@@ -111,7 +111,7 @@ func (s *incrementalStrategy) decodeState(prior *bindings.LedgerState, changes [
 		s.mirror.apply(change, ledgerSeq)
 	}
 	sortTypedStateDeltas(s.mirror.deltas)
-	out, dirty := s.snapshot(closeTime)
+	out, dirty := s.snapshot(closeTime, fullBuild)
 	s.lastOut = out
 	return out, s.mirror.deltas, dirty
 }
@@ -202,7 +202,19 @@ func (s *incrementalStrategy) normalizeCarry() {
 // build() in state.go — same statements, same order — except pending/users,
 // which come from the caches. Any edit to build() must be mirrored here; the
 // parity suite fails loudly when the two drift.
-func (s *incrementalStrategy) snapshot(closeTime time.Time) (*bindings.LedgerState, []bindings.DirtyPosition) {
+//
+// fullBuild gates the one genuinely O(total state) step left in this method:
+// materializing the PendingUserPositions/Users slices from s.keys (below). The
+// cache maintenance above it (the per-dirty-entry loop) always runs at
+// O(dirty) regardless of fullBuild — it is what keeps s.keys/s.index/s.usersLen
+// (and therefore userPositions/ProjectPositions) correct on every ledger, full
+// build or not. When fullBuild is false, PendingUserPositions/Users on the
+// returned state are left nil: callers that only need the dirty set for this
+// ledger (relay's per-ledger emission, via Adapter.UserPositions /
+// ProjectPositions) never pay the O(state) copy; callers that need the
+// complete slices (checkpoint persistence, cold-start hydration) request
+// fullBuild explicitly (Adapter.DecodeStateFullAt).
+func (s *incrementalStrategy) snapshot(closeTime time.Time, fullBuild bool) (*bindings.LedgerState, []bindings.DirtyPosition) {
 	b := s.mirror
 	b.resolveAggregatorPrices(closeTime)
 	b.resolveOraclePrices()
@@ -285,15 +297,21 @@ func (s *incrementalStrategy) snapshot(closeTime time.Time) (*bindings.LedgerSta
 
 	var pending []contracts.PendingUserPosition
 	var users []contracts.UserReservePosition
-	if s.bisect.rebuildSnapshot {
+	switch {
+	case s.bisect.rebuildSnapshot:
 		pending, users = s.rebuildPendingUsers()
-	} else {
+	case fullBuild:
 		pending = make([]contracts.PendingUserPosition, 0, len(s.keys))
 		users = make([]contracts.UserReservePosition, 0, s.usersLen)
 		for _, entry := range s.keys {
 			pending = append(pending, entry.out)
 			users = append(users, entry.block...)
 		}
+	default:
+		// Cheap path: the caches above are already current for this ledger
+		// (userPositions/ProjectPositions read them directly), so the O(total
+		// state) copy into flat slices is skipped entirely. pending/users stay
+		// nil on the returned state.
 	}
 
 	backstops := make([]contracts.BackstopPosition, 0, len(b.backstopUsers))

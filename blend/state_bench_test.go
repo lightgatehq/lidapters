@@ -111,6 +111,12 @@ func benchPrior(b *testing.B, poolID string, nUsers int) *bindings.LedgerState {
 	return prior
 }
 
+// benchmarkStateLadenFold drives DecodeState (the cheap, fullBuild=false
+// path as of issue #67's fix) once per ledger. Under StateModeIncremental this
+// is now O(dirty) per ledger regardless of nUsers — the whole point of the
+// fix — so this benchmark's per-op cost should stop scaling with nUsers for
+// incremental (it still scales for paranoid, which has no cheaper path: that
+// is the reference cost the fix is measured against, not a regression).
 func benchmarkStateLadenFold(b *testing.B, mode StateMode, nUsers int) {
 	poolID := benchContract(b, 1)
 	adapter, err := New(Config{StateMode: mode})
@@ -137,6 +143,42 @@ func BenchmarkStateLadenFold(b *testing.B) {
 		for _, nUsers := range []int{1_000, 10_000, 50_000} {
 			b.Run(fmt.Sprintf("%s/users_%d", mode, nUsers), func(b *testing.B) {
 				benchmarkStateLadenFold(b, mode, nUsers)
+			})
+		}
+	}
+}
+
+// benchmarkStateLadenFoldFullBuild is benchmarkStateLadenFold's full-build
+// counterpart: every ledger calls DecodeStateFull (fullBuild=true), the
+// checkpoint/persist-boundary cost. This keeps the pre-#67 O(total state)
+// per-ledger cost visible in the suite — the boundary case the fix does NOT
+// remove, just moves off the hot per-ledger path — rather than letting the
+// default-path benchmark above hide it.
+func benchmarkStateLadenFoldFullBuild(b *testing.B, mode StateMode, nUsers int) {
+	poolID := benchContract(b, 1)
+	adapter, err := New(Config{StateMode: mode})
+	if err != nil {
+		b.Fatalf("new adapter: %v", err)
+	}
+	state := benchPrior(b, poolID, nUsers)
+	change := benchPositionsChange(b, poolID, benchAddress(b, 42), 2000)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		next, err := adapter.DecodeStateFull(state, []bindings.ContractDataChange{change}, int64(1000+i))
+		if err != nil {
+			b.Fatalf("decode: %v", err)
+		}
+		state = next
+	}
+}
+
+func BenchmarkStateLadenFoldFullBuild(b *testing.B) {
+	for _, mode := range []StateMode{StateModeParanoid, StateModeIncremental} {
+		for _, nUsers := range []int{1_000, 10_000, 50_000} {
+			b.Run(fmt.Sprintf("%s/users_%d", mode, nUsers), func(b *testing.B) {
+				benchmarkStateLadenFoldFullBuild(b, mode, nUsers)
 			})
 		}
 	}
