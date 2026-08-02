@@ -905,6 +905,89 @@ func TestReserveMetadataSurfacesEnabledAndReactivity(t *testing.T) {
 	}
 }
 
+// TestReservePriceSourceClaimsPoolOracleOnlyWhenPriced is the V1-05 D-02
+// producer-provenance regression: provenance is producer-owned, so the adapter
+// states price_source=pool_oracle only on a reserve whose price genuinely came
+// from the pool's decoded oracle. A reserve with no usable oracle price (raw
+// absent or zero-sanitized) must claim no provenance at all — relay persists
+// that as null rather than guessing a label. There is deliberately no "pegged"
+// value: a pool oracle's constant-base branch is still pool_oracle.
+func TestReservePriceSourceClaimsPoolOracleOnlyWhenPriced(t *testing.T) {
+	t.Parallel()
+
+	adapter, err := New(Config{
+		V2WasmHashes: map[string]struct{}{
+			"known-v2": {},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new adapter: %v", err)
+	}
+
+	out, err := adapter.Transform(bindings.TransformInput{
+		LedgerSeq: 100,
+		CloseTime: time.Unix(1000, 0).UTC(),
+		State: &bindings.LedgerState{
+			Pools: []contracts.PoolState{
+				{
+					ContractID: "CPOOL",
+					WasmHash:   "known-v2",
+					Reserves: []contracts.ReserveState{
+						{
+							AssetID:        "CASSETPRICED",
+							AssetDecimals:  7,
+							BRateRaw:       "10000000",
+							DRateRaw:       "10000000",
+							BSupplyRaw:     "10000000",
+							DSupplyRaw:     "0",
+							OraclePriceRaw: "1250000000",
+							OracleDecimals: 7,
+						},
+						{
+							AssetID:       "CASSETNOPRICE",
+							AssetDecimals: 7,
+							BRateRaw:      "10000000",
+							DRateRaw:      "10000000",
+							BSupplyRaw:    "10000000",
+							DSupplyRaw:    "0",
+						},
+						{
+							AssetID:        "CASSETZEROPRICE",
+							AssetDecimals:  7,
+							BRateRaw:       "10000000",
+							DRateRaw:       "10000000",
+							BSupplyRaw:     "10000000",
+							DSupplyRaw:     "0",
+							OraclePriceRaw: "0",
+							OracleDecimals: 7,
+						},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("transform: %v", err)
+	}
+
+	sources := map[string]string{}
+	for _, reserve := range out.Reserves {
+		sources[reserve.AssetID] = reserve.Metadata["price_source"]
+	}
+	if len(sources) != 3 {
+		t.Fatalf("expected 3 reserves, got %d (%v)", len(sources), sources)
+	}
+	if got := sources["CASSETPRICED"]; got != "pool_oracle" {
+		t.Fatalf("priced reserve must claim pool_oracle provenance, got %q", got)
+	}
+	if got := sources["CASSETNOPRICE"]; got != "" {
+		t.Fatalf("reserve without an oracle price must claim no provenance, got %q", got)
+	}
+	if got := sources["CASSETZEROPRICE"]; got != "" {
+		t.Fatalf("zero-sanitized price must claim no provenance, got %q", got)
+	}
+}
+
 func TestBackstopMetadataCarriesQueueShape(t *testing.T) {
 	t.Parallel()
 

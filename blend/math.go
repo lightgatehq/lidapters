@@ -303,6 +303,16 @@ func (a *Adapter) computeState(input bindings.TransformInput, output *bindings.T
 				"rate_modifier_scalar":     numString(nPool.rateModifierScalar),
 				"utilization_source":       nReserve.utilizationSource,
 			}
+			// Provenance is producer-owned (V1-05 D-02): this adapter emits a
+			// reserve price only when the pool's decoded oracle supplied one
+			// (normalizeReserve sets priceAvailable), so a priced reserve
+			// truthfully claims pool_oracle. An unavailable price claims no
+			// source — relay must persist that as null, not guess a label.
+			// A constant-base branch of the pool oracle (e.g. a USDC-base
+			// aggregator returning exactly 1.0) is still pool_oracle.
+			if nReserve.priceAvailable {
+				reserveMeta["price_source"] = "pool_oracle"
+			}
 			// Price freshness (audit section 4): the pool oracle's last price
 			// update time and cadence, only when decoded — a price with no
 			// timestamp stays visibly timestamp-less rather than guessed fresh.
