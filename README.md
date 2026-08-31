@@ -21,17 +21,17 @@ lidapters/
 
 ```go
 import (
-	"github.com/daccred/lidapters/bindings"
-	"github.com/daccred/lidapters/blend"
-	"github.com/daccred/lidapters/blend/contracts"
-	"github.com/daccred/lidapters/blend/discovery"
+	"github.com/lightgatehq/lidapters/bindings"
+	"github.com/lightgatehq/lidapters/blend"
+	"github.com/lightgatehq/lidapters/blend/contracts"
+	"github.com/lightgatehq/lidapters/blend/discovery"
 )
 ```
 
 The module follows semantic versioning. Consumers should pin a release such as:
 
 ```sh
-go get github.com/daccred/lidapters@v0.4.0
+go get github.com/lightgatehq/lidapters@v0.4.0
 ```
 
 ## Commands

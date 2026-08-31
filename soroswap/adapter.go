@@ -28,7 +28,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/daccred/lidapters/bindings"
+	"github.com/lightgatehq/lidapters/bindings"
 )
 
 type Config struct {

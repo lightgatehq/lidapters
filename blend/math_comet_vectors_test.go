@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/daccred/lidapters/bindings"
-	"github.com/daccred/lidapters/blend/contracts"
+	"github.com/lightgatehq/lidapters/bindings"
+	"github.com/lightgatehq/lidapters/blend/contracts"
 )
 
 // The neutral V1-09 Comet valuation vectors (testdata/v1_09_comet_vectors.json,

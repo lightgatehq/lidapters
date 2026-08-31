@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/daccred/lidapters/bindings"
+	"github.com/lightgatehq/lidapters/bindings"
 )
 
 func stableID(parts ...any) string {

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/daccred/lidapters/bindings"
+	"github.com/lightgatehq/lidapters/bindings"
 )
 
 func TestProRataFloors(t *testing.T) {

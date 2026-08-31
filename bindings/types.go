@@ -17,7 +17,7 @@ package bindings
 import (
 	"time"
 
-	"github.com/daccred/lidapters/blend/contracts"
+	"github.com/lightgatehq/lidapters/blend/contracts"
 )
 
 type RawEventEnvelope struct {
