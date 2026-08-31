@@ -5,7 +5,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/daccred/lidapters/bindings"
+	"github.com/lightgatehq/lidapters/bindings"
 )
 
 var q96 = new(big.Int).Lsh(big.NewInt(1), 96)

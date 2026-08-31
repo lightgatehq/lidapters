@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/daccred/lidapters/bindings"
+	"github.com/lightgatehq/lidapters/bindings"
 )
 
 var _ bindings.ConfigStateful = (*Adapter)(nil)

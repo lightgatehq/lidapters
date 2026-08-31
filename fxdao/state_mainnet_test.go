@@ -30,7 +30,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/daccred/lidapters/bindings"
+	"github.com/lightgatehq/lidapters/bindings"
 )
 
 const (

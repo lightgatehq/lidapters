@@ -28,8 +28,8 @@ package blend
 import (
 	"time"
 
-	"github.com/daccred/lidapters/bindings"
-	"github.com/daccred/lidapters/blend/contracts"
+	"github.com/lightgatehq/lidapters/bindings"
+	"github.com/lightgatehq/lidapters/blend/contracts"
 )
 
 // stateStrategy folds one ledger's owned contract_data changes into the next

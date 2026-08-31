@@ -14,7 +14,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/daccred/lidapters/bindings"
+	"github.com/lightgatehq/lidapters/bindings"
 )
 
 func TestPreExtensionCheckpointRoundTrips(t *testing.T) {

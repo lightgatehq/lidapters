@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/daccred/lidapters/bindings"
+	"github.com/lightgatehq/lidapters/bindings"
 	"github.com/stellar/go-stellar-sdk/xdr"
 )
 

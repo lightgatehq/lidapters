@@ -3,8 +3,8 @@ package blend
 import (
 	"testing"
 
-	"github.com/daccred/lidapters/bindings"
-	"github.com/daccred/lidapters/blend/contracts"
+	"github.com/lightgatehq/lidapters/bindings"
+	"github.com/lightgatehq/lidapters/blend/contracts"
 	"github.com/stellar/go-stellar-sdk/xdr"
 )
 

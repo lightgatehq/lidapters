@@ -1,4 +1,4 @@
-module github.com/daccred/lidapters
+module github.com/lightgatehq/lidapters
 
 go 1.25.0
 

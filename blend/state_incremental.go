@@ -34,8 +34,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/daccred/lidapters/bindings"
-	"github.com/daccred/lidapters/blend/contracts"
+	"github.com/lightgatehq/lidapters/bindings"
+	"github.com/lightgatehq/lidapters/blend/contracts"
 )
 
 // userEntry is the cached view of one pendingPos entry: its identity, its

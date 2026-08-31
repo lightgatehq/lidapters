@@ -3,7 +3,7 @@ package aquarius
 import (
 	"testing"
 
-	"github.com/daccred/lidapters/bindings"
+	"github.com/lightgatehq/lidapters/bindings"
 )
 
 func testSeedConfig() Config {
