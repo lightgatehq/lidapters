@@ -422,6 +422,50 @@ func TestHydrateConfig_LegacyReservePayloadMarksIndexKnown(t *testing.T) {
 	}
 }
 
+// TestPoolConfigBody_AbsentOracleIsNull pins the pool payload's null vocabulary
+// (relay#153 / daccred/relay.rs#99): a pool whose PoolConfig the fold has not
+// seen states that as JSON null under an always-present key, never as "". Gold's
+// generated oracle_ref reads NULL for the former and ” for the latter, which is
+// what lets a consumer tell a stated absence from a row written before the
+// vocabulary existed. Hydration accepts both, so legacy rows still reload.
+func TestPoolConfigBody_AbsentOracleIsNull(t *testing.T) {
+	t.Parallel()
+
+	payload := marshalPoolBody(contracts.PoolState{ContractID: "CPOOL", PoolStatus: "active", BackstopTakeRate: "2000000"})
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for _, key := range []string{"oracle", "backstop"} {
+		v, ok := raw[key]
+		if !ok {
+			t.Fatalf("%s key missing from payload %s; the key must stay present", key, payload)
+		}
+		if string(v) != "null" {
+			t.Fatalf("%s = %s, want null for an unset ref", key, v)
+		}
+	}
+
+	withOracle := marshalPoolBody(contracts.PoolState{ContractID: "CPOOL", OracleContract: "CORACLE", BackstopContract: "CBACKSTOP"})
+	if !bytes.Contains(withOracle, []byte(`"oracle":"CORACLE"`)) || !bytes.Contains(withOracle, []byte(`"backstop":"CBACKSTOP"`)) {
+		t.Fatalf("a set ref must still marshal as a string: %s", withOracle)
+	}
+
+	adapter := newTestAdapter(t)
+	for name, body := range map[string]string{
+		"null":        `{"oracle":null,"backstop":null,"status":"active","take_rate":"","wasm_hash":""}`,
+		"legacy \"\"": `{"oracle":"","backstop":"","status":"active","take_rate":"","wasm_hash":""}`,
+	} {
+		seed, err := adapter.HydrateConfig([]bindings.ConfigRecord{{Kind: kindPool, EntityKey: "CPOOL", Payload: []byte(body)}})
+		if err != nil {
+			t.Fatalf("hydrate %s: %v", name, err)
+		}
+		if len(seed.Pools) != 1 || seed.Pools[0].OracleContract != "" || seed.Pools[0].BackstopContract != "" {
+			t.Fatalf("hydrate %s: pools = %+v, want one pool with unset refs", name, seed.Pools)
+		}
+	}
+}
+
 // TestReserveByIndex_RequiresKnownUniqueIndex pins the resolution rule the
 // config-record and user-emission paths share with the fold: only a known,
 // unique index resolves. An unknown index (never configured) and a duplicate
