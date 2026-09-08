@@ -234,12 +234,34 @@ type oraclePriceBody struct {
 	PriceRaw   string `json:"price_raw"`
 }
 
+// Oracle and Backstop are pointers so the payload can state an absence: a pool
+// whose PoolConfig / Backstop entry the fold has not seen is written as JSON
+// null, never as "" (relay#153). The key is always present (no omitempty), so
+// the shape stays five keys and a missing key still reads as a drifted payload
+// rather than a stated absence. Rows written before this vocabulary carry ""
+// for the same state; hydration reads both as unset.
 type poolConfigBody struct {
-	Oracle   string `json:"oracle"`
-	Backstop string `json:"backstop"`
-	Status   string `json:"status"`
-	TakeRate string `json:"take_rate"`
-	WasmHash string `json:"wasm_hash"`
+	Oracle   *string `json:"oracle"`
+	Backstop *string `json:"backstop"`
+	Status   string  `json:"status"`
+	TakeRate string  `json:"take_rate"`
+	WasmHash string  `json:"wasm_hash"`
+}
+
+// optionalRef states an unset contract ref as JSON null.
+func optionalRef(ref string) *string {
+	if ref == "" {
+		return nil
+	}
+	return &ref
+}
+
+// refOrEmpty reads a stated absence (null) and the legacy "" alike as unset.
+func refOrEmpty(ref *string) string {
+	if ref == nil {
+		return ""
+	}
+	return *ref
 }
 
 type reserveConfigBody struct {
@@ -616,8 +638,8 @@ func marshalFeedBody(f contracts.PriceFeedState) []byte {
 
 func marshalPoolBody(p contracts.PoolState) []byte {
 	return mustMarshal(poolConfigBody{
-		Oracle:   p.OracleContract,
-		Backstop: p.BackstopContract,
+		Oracle:   optionalRef(p.OracleContract),
+		Backstop: optionalRef(p.BackstopContract),
 		Status:   p.PoolStatus,
 		TakeRate: p.BackstopTakeRate,
 		WasmHash: p.WasmHash,
@@ -716,8 +738,8 @@ func (a *Adapter) HydrateConfig(records []bindings.ConfigRecord) (*bindings.Ledg
 			}
 			pools[rec.EntityKey] = &contracts.PoolState{
 				ContractID:       rec.EntityKey,
-				OracleContract:   body.Oracle,
-				BackstopContract: body.Backstop,
+				OracleContract:   refOrEmpty(body.Oracle),
+				BackstopContract: refOrEmpty(body.Backstop),
 				PoolStatus:       body.Status,
 				BackstopTakeRate: body.TakeRate,
 				WasmHash:         body.WasmHash,
