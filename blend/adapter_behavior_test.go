@@ -418,14 +418,14 @@ func TestLifecycleStatusEventPreservesContractIdentity(t *testing.T) {
 }
 
 // TestStatusChangeSatisfiesLifecycleSyntheticIdentity is a frozen golden fixture
-// for relay migration 001's lifecycle_synthetic_identity CHECK. A
-// contract_status_change row is only accepted by gold when
+// for the lifecycle synthetic-identity constraint downstream stores enforce. A
+// contract_status_change row is only accepted when
 // address = contract, tx_hash = 'status:'||contract||':'||ledger, event_index = 0.
 // The raw event here deliberately carries a real tx hash and a NON-zero event
-// index (the exact shape that crash-looped the live testnet fold at ledger
+// index (the exact shape that crash-looped a live testnet consumer at ledger
 // 3289013) — the adapter must overwrite both with the synthetic identity.
 // Only the legacy contract_status_change vocabulary gets this coercion: since
-// the exact-name classifier (relay#65/#75), v2 lifecycle events like
+// the exact-name classifier, v2 lifecycle events like
 // set_reserve keep their own type and raw identity (see
 // TestSetReserveKeepsExactTypeAndRawIdentity).
 func TestStatusChangeSatisfiesLifecycleSyntheticIdentity(t *testing.T) {
@@ -466,7 +466,7 @@ func TestStatusChangeSatisfiesLifecycleSyntheticIdentity(t *testing.T) {
 	if got.ActivityType != contracts.ActivityTypeStatusChange {
 		t.Fatalf("expected %s, got %s", contracts.ActivityTypeStatusChange, got.ActivityType)
 	}
-	// The three fields the gold CHECK constrains, asserted against the exact SQL
+	// The three fields the identity constraint covers, asserted against the exact SQL
 	// concat so this can never regress.
 	if got.Address != contractID {
 		t.Fatalf("identity address: want contract %s, got %s", contractID, got.Address)
@@ -846,11 +846,11 @@ func TestStateMetadataUsesCanonicalOracleKey(t *testing.T) {
 	}
 }
 
-// TestReserveMetadataSurfacesEnabledAndReactivity is the relay#27 gold-surfacing
+// TestReserveMetadataSurfacesEnabledAndReactivity is the metadata-surfacing
 // regression: the per-reserve enabled flag and reactivity constant decoded from
 // ResConfig (state.go) must reach the reserve's output Metadata map, which is
-// what relay folds into blend_reserve_snapshots' reserve_config/metadata JSONB —
-// the table the API actually reads. Landing the fields on contracts.ReserveState
+// what downstream consumers persist as the reserve's config/metadata — the
+// surface the API actually reads. Landing the fields on contracts.ReserveState
 // alone (state.go) is not enough; math.go's output construction must carry them
 // too, or a wallet integration filtering on "enabled" never sees the value.
 func TestReserveMetadataSurfacesEnabledAndReactivity(t *testing.T) {
@@ -905,11 +905,11 @@ func TestReserveMetadataSurfacesEnabledAndReactivity(t *testing.T) {
 	}
 }
 
-// TestReservePriceSourceClaimsPoolOracleOnlyWhenPriced is the V1-05 D-02
+// TestReservePriceSourceClaimsPoolOracleOnlyWhenPriced is the
 // producer-provenance regression: provenance is producer-owned, so the adapter
 // states price_source=pool_oracle only on a reserve whose price genuinely came
 // from the pool's decoded oracle. A reserve with no usable oracle price (raw
-// absent or zero-sanitized) must claim no provenance at all — relay persists
+// absent or zero-sanitized) must claim no provenance at all — a downstream store persists
 // that as null rather than guessing a label. There is deliberately no "pegged"
 // value: a pool oracle's constant-base branch is still pool_oracle.
 func TestReservePriceSourceClaimsPoolOracleOnlyWhenPriced(t *testing.T) {
