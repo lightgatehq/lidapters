@@ -61,12 +61,8 @@ func TestDecodeState_AuctionRoundTrip(t *testing.T) {
 	assetA := validContractString(t, 2)
 	assetB := validContractString(t, 3)
 
-	auctionValue := mapVal(t, map[string]xdr.ScVal{
-		"bid": mapVal(t, map[string]xdr.ScVal{}),
-		"lot": mapVal(t, map[string]xdr.ScVal{}),
-	})
-	// Rebuild with address-keyed maps: lot has an extreme i128 amount, bid a
-	// negative extreme, so 128-bit round-tripping is pinned exactly.
+	// Address-keyed maps: lot has an extreme i128 amount, bid a negative
+	// extreme, so 128-bit round-tripping is pinned exactly.
 	lotEntries := xdr.ScMap{
 		{Key: contractAddressVal(t, 2), Val: i128MaxVal()},
 		{Key: contractAddressVal(t, 3), Val: i128Val(500)},
@@ -75,7 +71,7 @@ func TestDecodeState_AuctionRoundTrip(t *testing.T) {
 		{Key: contractAddressVal(t, 2), Val: i128MinVal()},
 	}
 	lotPtr, bidPtr := &lotEntries, &bidEntries
-	auctionValue = mapVal(t, map[string]xdr.ScVal{
+	auctionValue := mapVal(t, map[string]xdr.ScVal{
 		"bid":   {Type: xdr.ScValTypeScvMap, Map: &bidPtr},
 		"lot":   {Type: xdr.ScValTypeScvMap, Map: &lotPtr},
 		"block": u32Val(62986500),

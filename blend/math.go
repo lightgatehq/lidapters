@@ -593,7 +593,8 @@ func (a *Adapter) computeState(input bindings.TransformInput, output *bindings.T
 		apy := ""
 		aprPartial := false
 		signedContribution := decZero
-		if userPos.PositionType == contracts.PositionTypeSupply || userPos.PositionType == contracts.PositionTypeCollateral {
+		switch userPos.PositionType {
+		case contracts.PositionTypeSupply, contracts.PositionTypeCollateral:
 			if reserve.supplyAPRNormalizedValid {
 				positionMeta["supply_apr"] = numString(reserve.supplyAPRNormalized)
 			}
@@ -613,7 +614,7 @@ func (a *Adapter) computeState(input bindings.TransformInput, output *bindings.T
 				positionMeta["apr_partial"] = "true"
 				aprPartial = true
 			}
-		} else if userPos.PositionType == contracts.PositionTypeLiability {
+		case contracts.PositionTypeLiability:
 			if reserve.borrowAPRNormalizedValid {
 				positionMeta["borrow_apr"] = numString(reserve.borrowAPRNormalized)
 			}

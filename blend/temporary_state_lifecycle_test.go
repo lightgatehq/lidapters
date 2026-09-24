@@ -101,7 +101,7 @@ func TestTemporaryStateChanges_AuctionCreateUpdateRemoveRestore(t *testing.T) {
 	}
 
 	// Restore (a fresh auction for the same user/type): upsert again.
-	state, err = adapter.DecodeState(state, []bindings.ContractDataChange{
+	_, err = adapter.DecodeState(state, []bindings.ContractDataChange{
 		stateChange(t, poolID, key, auctionValueVal(t, 104)),
 	}, 104)
 	if err != nil {

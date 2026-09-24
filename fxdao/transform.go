@@ -16,7 +16,7 @@ func stableID(parts ...any) string {
 		if b.Len() > 0 {
 			b.WriteByte('|')
 		}
-		b.WriteString(fmt.Sprint(p))
+		fmt.Fprint(&b, p)
 	}
 	s := sha256.Sum256([]byte(b.String()))
 	return hex.EncodeToString(s[:])

@@ -3048,13 +3048,14 @@ func scIntString(v xdr.ScVal) (string, bool) {
 	case xdr.ScValTypeScvU64, xdr.ScValTypeScvTimepoint, xdr.ScValTypeScvDuration:
 		var value uint64
 		var ok bool
-		if v.Type == xdr.ScValTypeScvTimepoint {
+		switch v.Type {
+		case xdr.ScValTypeScvTimepoint:
 			raw, found := v.GetTimepoint()
 			value, ok = uint64(raw), found
-		} else if v.Type == xdr.ScValTypeScvDuration {
+		case xdr.ScValTypeScvDuration:
 			raw, found := v.GetDuration()
 			value, ok = uint64(raw), found
-		} else {
+		default:
 			raw, found := v.GetU64()
 			value, ok = uint64(raw), found
 		}

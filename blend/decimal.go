@@ -42,25 +42,6 @@ func parseDecimalOrZero(v string) decimal.Decimal {
 	return d
 }
 
-func divScale(value, scale string) (decimal.Decimal, error) {
-	v, err := mustParseDecimal(value)
-	if err != nil {
-		return decZero, err
-	}
-	s, err := mustParseDecimal(scale)
-	if err != nil {
-		return decZero, err
-	}
-	if s.IsZero() {
-		return decZero, nil
-	}
-	return v.Div(s), nil
-}
-
-func normalizedFactor(raw string) (decimal.Decimal, error) {
-	return divScale(raw, factorScale)
-}
-
 func normalizedRateModifier(raw string, scalar decimal.Decimal) (decimal.Decimal, error) {
 	v, err := mustParseDecimal(raw)
 	if err != nil {
@@ -73,13 +54,6 @@ func normalizedRateModifier(raw string, scalar decimal.Decimal) (decimal.Decimal
 }
 
 func numString(d decimal.Decimal) string {
-	return d.String()
-}
-
-func numStringOrEmpty(d decimal.Decimal) string {
-	if d.IsZero() {
-		return ""
-	}
 	return d.String()
 }
 
@@ -117,10 +91,6 @@ func fixedMulFloor(x, y, scalar decimal.Decimal) decimal.Decimal {
 
 func fixedMulCeil(x, y, scalar decimal.Decimal) decimal.Decimal {
 	return ceilDiv(x.Mul(y), scalar)
-}
-
-func fixedDivFloor(x, y, scalar decimal.Decimal) decimal.Decimal {
-	return floorDiv(x.Mul(scalar), y)
 }
 
 func fixedDivCeil(x, y, scalar decimal.Decimal) decimal.Decimal {
