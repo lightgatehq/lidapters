@@ -44,10 +44,10 @@ const (
 	cam7Pair  = "CAM7DY53G63XA4AJRS24Z6VFYAFSSF76C3RZ45BE5YU3FQS5255OOABP"
 	cccdPair  = "CCCDU62TWI744KFK6COAW2PARPVPXKKE3DBVBUZCFWZOGGD7HZ5YEY3X"
 
-	xlmSAC    = "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA"
+	xlmSAC     = "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA"
 	libreToken = "CBEM2CAIYLM3HBOPU5HLQL7V5BUAKM3N77DYQKX4FNHTQLQUUD2ZFBOX"
-	usdcToken = "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75"
-	blndToken = "CD25MNVTZDL4Y3XBCPCJXGXATV5WUHHOWMYFF4YBEGU5FCPGMYTVG5JY"
+	usdcToken  = "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75"
+	blndToken  = "CD25MNVTZDL4Y3XBCPCJXGXATV5WUHHOWMYFF4YBEGU5FCPGMYTVG5JY"
 
 	gb77 = "GB77C7CHJQGWNMDPWRXXN5KMS55K5SSERBGND4GGCYDDBLC52FEKHUOR"
 	gacx = "GACXANRYOSGYKYI3CRTSIOFLTCCO3AWIN5IFJEF4VO4OU4IWR4WAQ4ON"
@@ -251,12 +251,12 @@ func TestFactoryRegistryDiscovery(t *testing.T) {
 		}
 		val := base64.StdEncoding.EncodeToString(vb)
 		changes = append(changes, bindings.ContractDataChange{
-			ContractID: factoryID,
-			KeyXDR:     base64.StdEncoding.EncodeToString(kb),
-			ValueXDR:   &val,
-			Durability: "persistent",
-			ChangeType: "Created",
-			Live:       true,
+			ContractID:         factoryID,
+			KeyXDR:             base64.StdEncoding.EncodeToString(kb),
+			ValueXDR:           &val,
+			Durability:         "persistent",
+			ChangeType:         "Created",
+			Live:               true,
 			LastModifiedLedger: row.LastModifiedLedger,
 		})
 	}
