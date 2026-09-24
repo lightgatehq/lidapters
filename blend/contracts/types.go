@@ -1,8 +1,8 @@
 // Package contracts holds the Blend-domain state and vocabulary types: the
-// typed ledger-state slices the adapter's DecodeState folds contract_data into,
-// and the position/activity enums Blend emits. The protocol-agnostic seam types
-// (ProtocolAdapter, TransformInput/Output, RawEventEnvelope, config records)
-// live in the module's bindings package.
+// typed ledger-state slices the adapter's DecodeState decodes contract_data
+// into, and the position/activity enums Blend emits. The protocol-agnostic seam
+// types (ProtocolAdapter, TransformInput/Output, RawEventEnvelope, config
+// records) live in the module's bindings package.
 package contracts
 
 import "time"
@@ -31,12 +31,12 @@ const (
 )
 
 // Exact blend-contracts-v2 pool event names, carried verbatim as activity
-// types. These are the values relay migration 017 added to gold's
-// activity_type enum (relay.lightgate.xyz#65/#75) — the two vocabularies must
-// stay identical or relay's normalizeActivityType coerces the row to
-// contract_status_change and the insert fails gold's
-// lifecycle_synthetic_identity CHECK. The v2 events withdraw, borrow, repay
-// and flash_loan share their spelling with the legacy constants above.
+// types. A consumer that stores activities in an activity_type enum must carry
+// these exact values — the two vocabularies must stay identical, or a consumer
+// that normalizes unknown types coerces the row to contract_status_change and
+// the insert fails the lifecycle_synthetic_identity CHECK on the stored
+// activity. The v2 events withdraw, borrow, repay and flash_loan share their
+// spelling with the legacy constants above.
 const (
 	ActivityTypeSupply                ActivityType = "supply"
 	ActivityTypeSupplyCollateral      ActivityType = "supply_collateral"
@@ -64,10 +64,9 @@ type PoolState struct {
 	WasmHash         string
 	PoolStatus       string
 	BackstopTakeRate string
-	// Pool instance-storage identity (decode-gap audit section 3): the on-chain
-	// display Name (the authoritative value the API's registry-sourced
-	// pool_name diverges from), the pool Admin address, and the pool-level BLND
-	// token address. Empty when absent on-chain.
+	// Pool instance-storage identity: the on-chain display Name (the authoritative
+	// value a registry-sourced pool_name diverges from), the pool Admin address,
+	// and the pool-level BLND token address. Empty when absent on-chain.
 	Name      string
 	Admin     string
 	BLNDToken string
@@ -158,14 +157,14 @@ type ReserveState struct {
 	// interest to now deterministically. Both empty when absent on-chain.
 	BackstopCreditRaw string
 	LastTimeRaw       string
-	// Archived marks a reserve whose ResConfig/ResData entry went not-live via
-	// TTL lapse or network-level eviction rather than an explicit on-chain
-	// delete. The reserve (and its reserveByIndex slot) is kept rather than
-	// dropped, so a pool user's position still resolves against it — dropping
-	// it here would silently zero every holder's row for this asset. Cleared
-	// back to false the next time a live ResConfig/ResData write for this
-	// reserve folds. ArchivedLedgerSeq is the ledger the lapse was observed on,
-	// zero when not archived.
+	// Archived marks a reserve whose ResConfig/ResData entry went not-live via TTL
+	// lapse or network-level eviction rather than an explicit on-chain delete. The
+	// reserve (and its reserveByIndex slot) is kept rather than dropped, so a pool
+	// user's position still resolves against it — dropping it here would silently
+	// zero every holder's row for this asset. Cleared back to false the next time
+	// a live ResConfig/ResData write for this reserve is decoded.
+	// ArchivedLedgerSeq is the ledger the lapse was observed on, zero when not
+	// archived.
 	Archived          bool
 	ArchivedLedgerSeq int64
 }
@@ -197,7 +196,7 @@ type PoolEmissionEntry struct {
 // QueuedReserveState is one pending, time-locked reserve-parameter change:
 // the pool's ResInit(Address) entry (QueuedReserveInit {new_config,
 // unlock_time}) — the "params about to change" signal, previously entirely
-// undecoded. It is deliberately NOT folded into the pool's live reserves: the
+// undecoded. It is deliberately NOT merged into the pool's live reserves: the
 // queued config takes effect only when set_reserve executes after
 // unlock_time. NewConfig carries the queued ReserveConfig verbatim as raw
 // strings ("" = field absent on-chain, Enabled "true"/"false"/"" likewise).
@@ -328,8 +327,8 @@ type OracleState struct {
 	Decimals   int32
 	Assets     []OracleAssetIndex
 	Prices     []OracleIndexPrice
-	// Instance-storage facets beyond the asset list (decode-gap audit section
-	// 4): the quote asset every price is denominated in (canonical SEP-40 key,
+	// Instance-storage facets beyond the asset list: the quote asset every
+	// price is denominated in (canonical SEP-40 key,
 	// "stellar:<C...>" / "other:<SYM>"), the update cadence in seconds, and the
 	// oracle admin. LastTimestampRaw is the oracle's top-level `timestamp`
 	// entry — the last-price-update unix time, the price-freshness signal.
@@ -398,11 +397,11 @@ type FeedRoundPrice struct {
 // OracleAggregatorState is one Blend oracle-aggregator's carried configuration,
 // decoded from its instance storage (Admin/Base/BaseAssets/Assets/Oracles/
 // Decimals/MaxAge — blend-capital/oracle-aggregator storage.rs). The aggregator
-// itself never writes prices; at fold time its per-asset prices are synthesized
-// from the registered feeds' rounds using exactly this configuration. The
-// config is assembled across several admin transactions after deploy, then
-// rarely touched, so it must ride in LedgerState — the same carry requirement
-// as OracleState.
+// itself never writes prices; at decode time its per-asset prices are
+// synthesized from the registered feeds' rounds using exactly this
+// configuration. The config is assembled across several admin transactions
+// after deploy, then rarely touched, so it must ride in LedgerState — the same
+// carry requirement as OracleState.
 type OracleAggregatorState struct {
 	ContractID string
 	Decimals   int32
@@ -470,7 +469,7 @@ type PendingUserPosition struct {
 	// still owns the position, it has just fallen off the live footprint — so
 	// the entry is kept (with its last known PositionsXDR) instead of purged.
 	// An explicit delete still clears the entry exactly as before. Cleared
-	// back to false the next time a live Positions write for this user folds.
+	// back to false the next time a live Positions write for this user is decoded.
 	// ArchivedLedgerSeq is the ledger the lapse was observed on, zero when not
 	// archived. Additive field: a snapshot from before this existed decodes
 	// with Archived=false, matching prior behavior for every entry it already
