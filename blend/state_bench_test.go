@@ -1,9 +1,9 @@
 package blend
 
-// State-laden fold benchmarks — the defect this seam exists for, in miniature.
-// A fold's cost in paranoid mode is O(total accumulated state) per ledger (the
+// State-laden decode benchmarks — the defect this seam exists for, in miniature.
+// A decode pass's cost in paranoid mode is O(total accumulated state) per ledger (the
 // prior mirror is rebuilt and the whole typed state re-sorted every ledger),
-// so per-ledger throughput decays as users accumulate. Incremental mode folds
+// so per-ledger throughput decays as users accumulate. Incremental mode applies
 // the same ledgers at O(changes), plus the output materialization.
 //
 //	go test ./blend/ -run '^$' -bench StateLadenFold -benchtime 2s
