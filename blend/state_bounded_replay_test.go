@@ -1,6 +1,6 @@
 package blend
 
-// Regression tests for the bounded-replay reserve-index defect (lidapters#33):
+// Regression tests for the bounded-window reserve-index defect (lidapters#33):
 // a reserve materialized by a ResData write alone keeps Go's zero-value
 // ReserveIndex (0), wins reserveByIndex[0] over the real index-0 reserve, and
 // positionsFromMap then attributes another reserve's position legs to the
