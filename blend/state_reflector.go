@@ -3,11 +3,11 @@
 // On mainnet a Blend pool's PoolConfig.oracle names an oracle-aggregator — a
 // SEP-40 VIEW contract (blend-capital/oracle-aggregator) that never writes a
 // price on-ledger. The only on-ledger price writes live in the Reflector feed
-// contracts the aggregator reads via cross-contract calls. A storage-write fold
-// therefore decodes three things:
+// contracts the aggregator reads via cross-contract calls. A storage-write
+// decoder therefore decodes three things:
 //
 //  1. the feed's per-round price entries (two storage protocols exist inside a
-//     mainnet replay window — the feed contract was upgraded live):
+//     mainnet ledger history — the feed contract was upgraded live):
 //     protocol 1: one temporary entry per (asset, round), key
 //     u128(hi = round_ts_ms, lo = asset_index), value bare i128;
 //     protocol 2: one temporary entry per round, key u64(round_ts_ms), value
@@ -23,13 +23,12 @@
 // (reflector-network/reflector-contract oracle/src/{prices,mapping}.rs,
 // blend-capital/oracle-aggregator src/price_data.rs @ b97e0a8).
 //
-// Each ledger, resolveAggregatorPrices replays the aggregator's own get_price
-// against the carried feed rounds — newest round within MaxAge of the ledger
-// close, max_dev deviation guard against the next older available round,
+// Each ledger, resolveAggregatorPrices reproduces the aggregator's own
+// get_price against the carried feed rounds — newest round within MaxAge of the
+// ledger close, max_dev deviation guard against the next older available round,
 // feed->aggregator decimal rescale, base/BaseAssets hardcoded to 1 — and
-// synthesizes the result into the same oracleBuilder representation the
-// testnet mock writes, so resolveOraclePrices and everything downstream are
-// untouched.
+// synthesizes the result into the same oracleBuilder representation the testnet
+// mock writes, so resolveOraclePrices and everything downstream are untouched.
 //
 // Divergence note: the two mainnet aggregators are different builds with the
 // same storage layout. This decoder mirrors blend-capital/oracle-aggregator's
@@ -142,7 +141,7 @@ func stellarAssetID(key string) (string, bool) {
 
 // --- feed decode -------------------------------------------------------------
 
-// applyFeedChange folds one live contract_data change of a registered feed.
+// applyFeedChange applies one live contract_data change of a registered feed.
 func (b *blendStateBuilder) applyFeedChange(feedID string, key, value xdr.ScVal) {
 	switch key.Type {
 	case xdr.ScValTypeScvLedgerKeyContractInstance:
@@ -213,11 +212,11 @@ func (b *blendStateBuilder) applyFeedDelete(feedID string, key xdr.ScVal) {
 
 // applyFeedInstance decodes the feed's instance storage. Reflector rewrites the
 // instance on every round (last_timestamp lives there), so the asset list is
-// re-read continuously and a fold starting mid-stream is configured within one
-// round of its floor. The instance keys are ScString (not Symbol). The protocol
-// 2 instance also carries a cache of the most recent rounds — decoded like the
-// round entries themselves, which primes the deviation guard's older price
-// immediately after a restart or floor start.
+// re-read continuously and a decoder starting mid-stream is configured within
+// one round of its floor. The instance keys are ScString (not Symbol). The
+// protocol 2 instance also carries a cache of the most recent rounds — decoded
+// like the round entries themselves, which primes the deviation guard's older
+// price immediately after a restart or floor start.
 func (b *blendStateBuilder) applyFeedInstance(feedID string, value xdr.ScVal) {
 	instance, ok := value.GetInstance()
 	if !ok || instance.Storage == nil {
@@ -342,7 +341,7 @@ func (f *feedBuilder) positivePrice(ts, index int64) (string, bool) {
 }
 
 // trimRounds keeps only the newest maxCarriedRounds rounds so the carry stays
-// bounded regardless of how long the fold runs.
+// bounded regardless of how long the decoder runs.
 func (f *feedBuilder) trimRounds() {
 	if len(f.rounds) <= maxCarriedRounds {
 		return
@@ -464,14 +463,14 @@ func (b *blendStateBuilder) applyAggregatorInstance(aggregatorID string, value x
 
 // --- price resolution ----------------------------------------------------------
 
-// resolveAggregatorPrices synthesizes each aggregator's per-asset prices into an
-// oracleBuilder under the aggregator's own contract ID — the ID a pool's
+// resolveAggregatorPrices synthesizes each aggregator's per-asset prices into
+// an oracleBuilder under the aggregator's own contract ID — the ID a pool's
 // PoolConfig.oracle names — so resolveOraclePrices threads them onto reserves
 // exactly as it does the testnet mock's written prices. Every asset the
 // aggregator serves gets an index mapping; an asset whose price does not
 // resolve (stale, deviant, missing) gets NO price at that index, which
 // resolveOraclePrices turns into a cleared reserve price rather than a stale
-// carry — the fold analog of the aggregator returning None.
+// carry — the decoder's analog of the aggregator returning None.
 func (b *blendStateBuilder) resolveAggregatorPrices(closeTime time.Time) {
 	aggregatorIDs := make([]string, 0, len(b.aggregators))
 	for id := range b.aggregators {
@@ -530,7 +529,7 @@ func (b *blendStateBuilder) resolveAggregatorPrices(closeTime time.Time) {
 	}
 }
 
-// resolveFeedPrice replays blend-capital/oracle-aggregator get_price
+// resolveFeedPrice reproduces blend-capital/oracle-aggregator get_price
 // (src/price_data.rs @ b97e0a8) against the carried rounds of the asset's
 // mapped feed:
 //
@@ -542,7 +541,7 @@ func (b *blendStateBuilder) resolveAggregatorPrices(closeTime time.Time) {
 //	  |price - old| > old * max_dev / 100
 //	rescale feed decimals -> aggregator decimals
 //
-// "now" is the folding ledger's close time — the same value the contract's
+// "now" is the decoded ledger's close time — the same value the contract's
 // e.ledger().timestamp() yields when lastprice is called at that ledger. A
 // zero closeTime (the legacy DecodeState path) anchors on the feed's newest
 // round instead: the freshest price still resolves, but a silent feed cannot
