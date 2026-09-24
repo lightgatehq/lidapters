@@ -28,10 +28,11 @@ go get github.com/lightgatehq/lidapters@v0.16.0
 | `aquarius` | Aquarius AMM pools (constant-product, stable and concentrated): pool state, LP positions broken into per-token components, concentrated-range positions with unclaimed fees, pending AQUA rewards, and activity. |
 | `aquarius/discovery` | Finds Aquarius pools by scanning a ledger's close meta for pool-creation events from known routers. |
 | `soroswap` | Soroswap factory and pairs: pair reserves and supply, LP positions as per-token components, and pair activity. |
-| `fxdao` | FxDAO vaults: one row per owner and denomination with debt, collateral and collateral ratio. The vaults contract emits no events, so state comes from contract data only. |
+| `fxdao` | FxDAO vaults: one row per owner and denomination with its debt, collateral and vault index (the contract's collateralisation ordering); collateral ratio and USD values are left null. The vaults contract emits no events, so state comes from contract data only. |
 
-Every protocol package exposes `New` (or `NewWithConfig`) and `DefaultConfig`,
-and its `Adapter` satisfies `bindings.ProtocolAdapter`.
+Every protocol package exposes `DefaultConfig` and a constructor — `New(cfg)`
+in `blend`; `New()` and `NewWithConfig(cfg)` in the others — and its `Adapter`
+satisfies `bindings.ProtocolAdapter`.
 
 ## The adapter contract
 
@@ -42,8 +43,8 @@ and its `Adapter` satisfies `bindings.ProtocolAdapter`.
 | `ID() string` | The adapter instance's identifier. |
 | `Protocol() string` | The protocol name the adapter serves. |
 | `OwnsContract(contractID string) bool` | Whether a contract's changes and events belong to this adapter. |
-| `DecodeState(prior, changes, ledgerSeq)` | Applies one ledger's contract-data changes to the prior state and returns the next state. Pure. |
-| `Transform(input TransformInput)` | Turns one ledger's events plus the decoded state into a `TransformOutput`. Pure. |
+| `DecodeState(prior, changes, ledgerSeq)` | Applies one ledger's contract-data changes to the prior state and returns the next state. Deterministic, no I/O. |
+| `Transform(input TransformInput)` | Turns one ledger's events plus the decoded state into a `TransformOutput`. Deterministic, no I/O. An `Adapter` value keeps per-call results and, in some modes, state between ledgers, so it is not safe for concurrent use. |
 
 Adapters may also implement optional capabilities, which a consumer discovers
 with a type assertion: `ConfigStateful`, `CloseTimeStateDecoder`,
@@ -101,7 +102,7 @@ runs the tests and publishes a GitHub release with generated notes.
 - Run `make test` and `make lint` before opening a pull request.
 - Run `make tidy` and commit any change to `go.mod` and `go.sum`; CI fails if
   they are out of date.
-- Keep adapters free of I/O. The module's only dependencies are the Stellar Go
+- Keep adapters free of I/O. The module's only direct dependencies are the Stellar Go
   SDK, `shopspring/decimal` and `BurntSushi/toml`; adapters do not import
   database, network, message-queue or service-runtime packages. This is a review
   rule, not an automated check.
