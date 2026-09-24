@@ -7,7 +7,7 @@ Each adapter takes what a ledger close produces for a protocol's contracts
 state and output rows: positions, per-account summaries with health factor,
 reserves, pools, vaults, and activity. It is written for indexers and services
 that need protocol-aware decoding but bring their own ledger source, storage and
-runtime. The adapters do no I/O: decoding is a pure function of its inputs.
+runtime. The adapters do no I/O: no database, network, clock or randomness.
 
 Requires Go 1.25 or later.
 
@@ -28,7 +28,7 @@ go get github.com/lightgatehq/lidapters@v0.16.0
 | `aquarius` | Aquarius AMM pools (constant-product, stable and concentrated): pool state, LP positions broken into per-token components, concentrated-range positions with unclaimed fees, pending AQUA rewards, and activity. |
 | `aquarius/discovery` | Finds Aquarius pools by scanning a ledger's close meta for pool-creation events from known routers. |
 | `soroswap` | Soroswap factory and pairs: pair reserves and supply, LP positions as per-token components, and pair activity. |
-| `fxdao` | FxDAO vaults: one row per owner and denomination with debt and collateral. The vaults contract emits no events, so state comes from contract data only. |
+| `fxdao` | FxDAO vaults: one row per owner and denomination with debt, collateral and collateral ratio. The vaults contract emits no events, so state comes from contract data only. |
 
 Every protocol package exposes `New` (or `NewWithConfig`) and `DefaultConfig`,
 and its `Adapter` satisfies `bindings.ProtocolAdapter`.
@@ -101,10 +101,10 @@ runs the tests and publishes a GitHub release with generated notes.
 - Run `make test` and `make lint` before opening a pull request.
 - Run `make tidy` and commit any change to `go.mod` and `go.sum`; CI fails if
   they are out of date.
-- Keep adapters free of I/O. An adapter depends on the Go standard library, the
-  Stellar Go SDK and this module's own packages; it does not import database,
-  network, message-queue or service-runtime packages. This is a review rule, not
-  an automated check.
+- Keep adapters free of I/O. The module's only dependencies are the Stellar Go
+  SDK, `shopspring/decimal` and `BurntSushi/toml`; adapters do not import
+  database, network, message-queue or service-runtime packages. This is a review
+  rule, not an automated check.
 - New decode behaviour comes with a test, ideally against a captured mainnet
   ledger entry in the package's `testdata/`.
 
