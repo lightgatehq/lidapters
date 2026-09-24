@@ -281,7 +281,7 @@ func TestDecodeState_RegisteredAssetNeverBecomesPhantomPool(t *testing.T) {
 		t.Fatalf("decode state: %v", err)
 	}
 	if hasPool(state, assetID) {
-		t.Fatalf("registered asset contract %s was folded as a phantom pool", assetID)
+		t.Fatalf("registered asset contract %s was decoded as a phantom pool", assetID)
 	}
 	if _, ok := findAsset(state, assetID); ok {
 		t.Fatalf("expected no decoded asset metadata (unrecognized storage), got one")
@@ -374,7 +374,7 @@ func TestDecodeState_AssetMetadataUnaffectedByBalanceEntryDelete(t *testing.T) {
 	}
 }
 
-// TestDecodeState_AssetMetadataDeterministic proves folding the same input
+// TestDecodeState_AssetMetadataDeterministic proves decoding the same input
 // twice yields byte-identical LedgerState.Assets — no map-iteration-order leak.
 func TestDecodeState_AssetMetadataDeterministic(t *testing.T) {
 	t.Parallel()
@@ -407,6 +407,6 @@ func TestDecodeState_AssetMetadataDeterministic(t *testing.T) {
 	b1, _ := json.Marshal(state1.Assets)
 	b2, _ := json.Marshal(state2.Assets)
 	if !bytes.Equal(b1, b2) {
-		t.Fatalf("asset metadata fold not byte-identical across two runs:\n%s\n%s", b1, b2)
+		t.Fatalf("asset metadata decode not byte-identical across two runs:\n%s\n%s", b1, b2)
 	}
 }
