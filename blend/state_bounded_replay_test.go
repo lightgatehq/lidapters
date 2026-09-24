@@ -5,7 +5,7 @@ package blend
 // ReserveIndex (0), wins reserveByIndex[0] over the real index-0 reserve, and
 // positionsFromMap then attributes another reserve's position legs to the
 // wrong asset while silently dropping legs whose true index has no mapping.
-// A pinned-start bounded replay without seeded config is the exposed path.
+// A pinned-start bounded decode window without seeded config is the exposed path.
 //
 // The corrected contract: reserve-index validity is explicit
 // (ReserveState.ReserveIndexKnown, set only by a decoded ResConfig.index or by
@@ -22,7 +22,7 @@ import (
 	"github.com/stellar/go-stellar-sdk/xdr"
 )
 
-// resDataChange is the in-window ResData write a bounded replay sees without
+// resDataChange is the in-window ResData write a bounded decode window sees without
 // its governance-time ResConfig.
 func resDataChange(t *testing.T, poolID string, asset xdr.ScVal) bindings.ContractDataChange {
 	t.Helper()
@@ -54,7 +54,7 @@ func witnessPositionsChange(t *testing.T, poolID string, user xdr.ScVal) binding
 }
 
 // TestReserveIndexKnown_ResDataBeforeConfigSkipsAndDiagnoses is the core #33
-// repro: a bounded replay where only USDC's ResData has folded (no ResConfig,
+// repro: a bounded window where only USDC's ResData has been decoded (no ResConfig,
 // no ResList, no config seed) and a user's Positions entry carries the real
 // two-reserve buckets. Neither bucket may resolve: index 0 has no configured
 // reserve behind it and USDC's true index is unknown, so both legs are skipped
@@ -226,8 +226,8 @@ func TestReserveIndexKnown_DuplicateKnownIndexesAreAmbiguous(t *testing.T) {
 }
 
 // TestReserveIndexKnown_LaterConfigRemapReemitsUsers pins the recovery path: a
-// bounded replay first skips and diagnoses the unmapped legs, and when the
-// missing ResConfig writes later fold, the remap dirties every user of the
+// bounded window first skips and diagnoses the unmapped legs, and when the
+// missing ResConfig writes later apply, the remap dirties every user of the
 // pool so the corrected legs are emitted without waiting for each user's
 // Positions entry to change.
 func TestReserveIndexKnown_LaterConfigRemapReemitsUsers(t *testing.T) {
@@ -256,7 +256,7 @@ func TestReserveIndexKnown_LaterConfigRemapReemitsUsers(t *testing.T) {
 		t.Fatalf("ledger 100 diagnostics = %+v, want 4", adapter.LastDecodeDiagnostics())
 	}
 
-	// Ledger 101: the governance-time ResConfig writes fold (XLM at index 0,
+	// Ledger 101: the governance-time ResConfig writes apply (XLM at index 0,
 	// USDC at index 1). No Positions entry changes, yet the user must be
 	// re-emitted with the corrected attribution.
 	state, err := adapter.DecodeState(prior, []bindings.ContractDataChange{
@@ -299,11 +299,11 @@ func TestReserveIndexKnown_LaterConfigRemapReemitsUsers(t *testing.T) {
 	}
 }
 
-// TestReserveIndexKnown_HydratesLegacyConfigIndexZero pins the relay's
-// seedConfigState resume path: a blend.reserve record exists only because a
+// TestReserveIndexKnown_HydratesLegacyConfigIndexZero pins the
+// config-hydration resume path: a blend.reserve record exists only because a
 // ResConfig was decoded, so hydrating one — including a pre-release record
 // whose payload has no index-validity field — marks the index known, and an
-// index-0 reserve from such a record resolves positions exactly like a folded
+// index-0 reserve from such a record resolves positions exactly like a decoded
 // ResConfig.
 func TestReserveIndexKnown_HydratesLegacyConfigIndexZero(t *testing.T) {
 	t.Parallel()
@@ -332,7 +332,7 @@ func TestReserveIndexKnown_HydratesLegacyConfigIndexZero(t *testing.T) {
 			hydrated.ReserveIndex, hydrated.ReserveIndexKnown)
 	}
 
-	// The seeded index-0 reserve resolves positions on the very first fold.
+	// The seeded index-0 reserve resolves positions on the very first decode pass.
 	state, err := adapter.DecodeState(seed, []bindings.ContractDataChange{
 		stateChange(t, poolID, variantVal(t, "Positions", user), mapVal(t, map[string]xdr.ScVal{
 			"collateral": intMapVal(t, map[uint32]xdr.ScVal{0: i128Val(300)}),
@@ -351,7 +351,7 @@ func TestReserveIndexKnown_HydratesLegacyConfigIndexZero(t *testing.T) {
 
 // TestReserveIndexDiagnostics_DeterministicOrder pins the exposed diagnostic
 // set's stable total order and run-twice byte identity: it is collected from
-// map-iteration folds, so without the sort the same ledger could serialize
+// map-iteration passes, so without the sort the same ledger could serialize
 // differently run to run.
 func TestReserveIndexDiagnostics_DeterministicOrder(t *testing.T) {
 	t.Parallel()
