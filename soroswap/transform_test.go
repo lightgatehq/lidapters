@@ -16,11 +16,11 @@ import (
 	"github.com/stellar/go-stellar-sdk/xdr"
 )
 
-// goldActivityTypeCheck is the frozen activity-type vocabulary that downstream
+// frozenActivityVocabulary is the frozen activity-type vocabulary that downstream
 // consumers enforce as a CHECK constraint, transcribed name-for-name. The
 // enumerating tests below pin the
 // adapter's vocabulary to exactly this set, both directions.
-var goldActivityTypeCheck = []string{"deposit", "swap", "withdraw", "sync", "skim"}
+var frozenActivityVocabulary = []string{"deposit", "swap", "withdraw", "sync", "skim"}
 
 func scSym(s string) xdr.ScVal {
 	sym := xdr.ScSymbol(s)
@@ -105,21 +105,21 @@ func eventAdapter(t *testing.T) *Adapter {
 	return a
 }
 
-// TestActivityVocabularyEnumeratesGoldCheck pins both directions: every name
+// TestActivityVocabularyEnumeratesFrozenSet pins both directions: every name
 // in the frozen vocabulary classifies to an activity under exactly that name,
 // and the adapter's vocabulary contains nothing else.
-func TestActivityVocabularyEnumeratesGoldCheck(t *testing.T) {
-	if len(pairActivityVocabulary) != len(goldActivityTypeCheck) {
+func TestActivityVocabularyEnumeratesFrozenSet(t *testing.T) {
+	if len(pairActivityVocabulary) != len(frozenActivityVocabulary) {
 		t.Fatalf("adapter vocabulary %v has %d names, frozen vocabulary has %d",
-			pairActivityVocabulary, len(pairActivityVocabulary), len(goldActivityTypeCheck))
+			pairActivityVocabulary, len(pairActivityVocabulary), len(frozenActivityVocabulary))
 	}
-	for _, name := range goldActivityTypeCheck {
+	for _, name := range frozenActivityVocabulary {
 		if _, ok := pairActivityVocabulary[name]; !ok {
 			t.Fatalf("frozen vocabulary name %q missing from adapter vocabulary", name)
 		}
 	}
 	a := eventAdapter(t)
-	for _, name := range goldActivityTypeCheck {
+	for _, name := range frozenActivityVocabulary {
 		data := scMap(t, "new_reserve_0", scI128(1), "new_reserve_1", scI128(2))
 		if name == "deposit" || name == "swap" || name == "withdraw" {
 			data = scMap(t, "to", scAddr(t, gb77), "liquidity", scI128(7))

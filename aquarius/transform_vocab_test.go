@@ -18,9 +18,9 @@ import (
 	"github.com/stellar/go-stellar-sdk/xdr"
 )
 
-// goldActivityVocabulary is the frozen Aquarius activity vocabulary,
+// frozenActivityVocabulary is the frozen Aquarius activity vocabulary,
 // transcribed character-exactly.
-var goldActivityVocabulary = []string{
+var frozenActivityVocabulary = []string{
 	// pool-level LP ops (liquidity_pool_events vocabulary)
 	"deposit_liquidity", "withdraw_liquidity", "trade",
 	"update_reserves", "pool_state",
@@ -129,12 +129,12 @@ func TestEventEraTablesMatchDeploymentDataOneToOne(t *testing.T) {
 	}
 }
 
-func TestActivityVocabularyMatchesGoldCheckExactly(t *testing.T) {
-	gold := map[string]struct{}{}
-	for _, name := range goldActivityVocabulary {
-		gold[name] = struct{}{}
+func TestActivityVocabularyMatchesFrozenSetExactly(t *testing.T) {
+	frozen := map[string]struct{}{}
+	for _, name := range frozenActivityVocabulary {
+		frozen[name] = struct{}{}
 	}
-	if len(gold) != len(goldActivityVocabulary) {
+	if len(frozen) != len(frozenActivityVocabulary) {
 		t.Fatal("duplicate name in the transcribed CHECK vocabulary")
 	}
 	served := map[string]struct{}{}
@@ -144,12 +144,12 @@ func TestActivityVocabularyMatchesGoldCheckExactly(t *testing.T) {
 				continue
 			}
 			served[name] = struct{}{}
-			if _, ok := gold[name]; !ok {
+			if _, ok := frozen[name]; !ok {
 				t.Errorf("(%s, %s) is served as an activity but is outside the frozen CHECK vocabulary", class, name)
 			}
 		}
 	}
-	for name := range gold {
+	for name := range frozen {
 		if _, ok := served[name]; !ok {
 			t.Errorf("CHECK vocabulary name %q is served by no era table row", name)
 		}
