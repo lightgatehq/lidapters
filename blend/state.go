@@ -1,14 +1,14 @@
 // Blend contract_data -> typed LedgerState decode lives here, in the protocol
-// adapter rather than the relay core. Keeping decode in the adapter is what
+// adapter rather than in the caller. Keeping decode in the adapter is what
 // makes the protocol self-contained: event decode, state decode, and transform
 // all live in one package.
 //
-// DecodeState is a stateless PURE reducer — (prior, changes, ledgerSeq) -> next.
-// The Adapter retains no per-ledger scratch; every carry-over threads through
-// *bindings.LedgerState (PendingUserPositions carries the one piece of builder
-// state that does not otherwise round-trip). Because it keeps no hidden state,
-// folding the same input twice yields byte-identical output, and it cannot leak
-// map-iteration order or wall-clock reads across ledgers.
+// DecodeState is a stateless PURE reducer — (prior, changes, ledgerSeq) ->
+// next. The Adapter retains no per-ledger scratch; every carry-over threads
+// through *bindings.LedgerState (PendingUserPositions carries the one piece of
+// builder state that does not otherwise round-trip). Because it keeps no hidden
+// state, decoding the same input twice yields byte-identical output, and it
+// cannot leak map-iteration order or wall-clock reads across ledgers.
 package blend
 
 import (
@@ -25,7 +25,7 @@ import (
 	"github.com/stellar/go-stellar-sdk/xdr"
 )
 
-// DecodeState folds Blend contract_data changes into typed ledger state. It is
+// DecodeState applies Blend contract_data changes to typed ledger state. It is
 // a pure reducer: it rebuilds a fresh in-memory mirror from prior, applies
 // changes, and returns the freshly built LedgerState. No DB / network / clock /
 // random / map-order; deterministic and run-twice byte-identical.
@@ -33,15 +33,15 @@ func (a *Adapter) DecodeState(prior *bindings.LedgerState, changes []bindings.Co
 	return a.DecodeStateAt(prior, changes, ledgerSeq, time.Time{})
 }
 
-// DecodeStateAt is DecodeState with the folding ledger's close time threaded
+// DecodeStateAt is DecodeState with the decoded ledger's close time threaded
 // in. The close time comes from the same close-meta as the changes, so it is
-// fold input, not a clock — purity holds. It gates the oracle-aggregators'
+// decode input, not a clock — purity holds. It gates the oracle-aggregators'
 // MaxAge staleness window (state_reflector.go); a zero closeTime (the plain
 // DecodeState path) falls back to each feed's newest round timestamp as the
 // reference "now", which prices the freshest round but cannot observe a feed
 // that stopped publishing.
 //
-// The fold itself is delegated to the strategy selected at New
+// The decode itself is delegated to the strategy selected at New
 // (Config.StateMode): paranoid runs the reference reducer below verbatim;
 // incremental produces byte-identical output from a carried mirror. See
 // state_strategy.go for the two-mode contract.
@@ -76,9 +76,9 @@ func (a *Adapter) OwnsContract(contractID string) bool {
 }
 
 // RegisterContracts adds discovered contract IDs to the owned set so
-// OwnsContract returns true for them. Idempotent; ignores blank IDs. Called by
-// the relay's projector edge as it discovers pools (it is NOT called from the
-// pure DecodeState path).
+// OwnsContract returns true for them. Idempotent; ignores blank IDs. The caller
+// invokes it as it discovers pools (it is NOT called from the pure DecodeState
+// path).
 func (a *Adapter) RegisterContracts(ids ...string) {
 	if a.contracts == nil {
 		a.contracts = map[string]struct{}{}
@@ -91,12 +91,11 @@ func (a *Adapter) RegisterContracts(ids ...string) {
 }
 
 // RegisterAssetContracts adds token-contract IDs (a pool's reserve assets) to
-// the registered asset set. Idempotent; ignores blank IDs. Called by the
-// relay's projector edge as a pool's reserve list reveals its reserve assets
-// (it is NOT called from the pure DecodeState path). A registered asset's
-// contract_data is folded on the SAC/SEP-41 decode path in apply(), ahead of
-// and instead of the generic pool-instance branch — see the assets field
-// comment on Adapter.
+// the registered asset set. Idempotent; ignores blank IDs. The caller invokes
+// it as a pool's reserve list reveals its reserve assets (it is NOT called
+// from the pure DecodeState path). A registered asset's contract_data is
+// decoded on the SAC/SEP-41 decode path in apply(), ahead of and instead of
+// the generic pool-instance branch — see the assets field comment on Adapter.
 func (a *Adapter) RegisterAssetContracts(ids ...string) {
 	if a.assets == nil {
 		a.assets = map[string]struct{}{}
@@ -110,10 +109,10 @@ func (a *Adapter) RegisterAssetContracts(ids ...string) {
 
 // RegisterPriceFeeds adds Reflector price-feed contract IDs (the feeds backing
 // the pools' oracle-aggregators) to the registered feed set. Idempotent;
-// ignores blank IDs. Called by the relay's projector edge from static config
-// (it is NOT called from the pure DecodeState path): feeds must be owned from
-// the first folded ledger, or the projector filters their round writes out
-// before decode and no aggregator can ever resolve a price.
+// ignores blank IDs. The caller invokes it from static config (it is NOT called
+// from the pure DecodeState path): feeds must be owned from the first decoded
+// ledger, or a caller that routes changes by OwnsContract filters their round
+// writes out before decode and no aggregator can ever resolve a price.
 func (a *Adapter) RegisterPriceFeeds(ids ...string) {
 	if a.feeds == nil {
 		a.feeds = map[string]struct{}{}
@@ -126,13 +125,13 @@ func (a *Adapter) RegisterPriceFeeds(ids ...string) {
 }
 
 // RegisterCometContracts adds Comet (BToken) LP contract IDs to the registered
-// Comet set. Idempotent; ignores blank IDs. Called by the relay's projector
-// edge from static config (it is NOT called from the pure DecodeState path): a
-// Comet must be owned from the first folded ledger, or the projector filters
-// its reserve/supply writes out before decode and the backstop's LP valuation
-// inputs can never fold. The set is deliberately distinct from RegisterContracts:
-// Comet instance/persistent data routes only to the Comet reducer
-// (state_comet.go), never to the Blend pool decoder (D-03).
+// Comet set. Idempotent; ignores blank IDs. The caller invokes it from static
+// config (it is NOT called from the pure DecodeState path): a Comet must be
+// owned from the first decoded ledger, or a caller that routes changes by
+// OwnsContract filters its reserve/supply writes out before decode and the
+// backstop's LP valuation inputs can never be decoded. The set is deliberately
+// distinct from RegisterContracts: Comet instance/persistent data routes only
+// to the Comet reducer (state_comet.go), never to the Blend pool decoder.
 func (a *Adapter) RegisterCometContracts(ids ...string) {
 	if a.comets == nil {
 		a.comets = map[string]struct{}{}
@@ -171,14 +170,14 @@ type blendStateBuilder struct {
 	// typedUserEmisEntityKey(user, pool, resTokenID).
 	userEmis map[string]contracts.UserEmissionState
 	// queuedReserves holds each pending ResInit(Address) entry, keyed by
-	// typedReserveEntityKey(pool, asset). Deliberately NOT folded into
-	// pool.reserves: a queue can target a brand-new asset, and folding it in
+	// typedReserveEntityKey(pool, asset). Deliberately NOT merged into
+	// pool.reserves: a queue can target a brand-new asset, and merging it in
 	// would fabricate a phantom live reserve.
 	queuedReserves map[string]contracts.QueuedReserveState
 	// backstopInstances holds each backstop contract's decoded identity
 	// (instance addresses + RZ/DropList), keyed by contract ID.
 	backstopInstances map[string]*contracts.BackstopInstanceState
-	// comets holds each registered Comet (BToken) contract's folded LP state,
+	// comets holds each registered Comet (BToken) contract's decoded LP state,
 	// keyed by contract ID. Populated only for contracts in ownedComets;
 	// carried across ledgers via LedgerState.AMMPools (PoolType "comet").
 	comets      map[string]*cometPoolBuilder
@@ -209,11 +208,11 @@ type blendStateBuilder struct {
 	// AMMPoolState rows. Read-only config, like the owned sets.
 	protocol string
 	deltas   []typedStateDelta
-	// ledgerSeq is the ledger currently being folded, threaded onto the builder
+	// ledgerSeq is the ledger currently being decoded, threaded onto the builder
 	// so the position-skip diagnostics emitted during build carry it. Set once
 	// per decode, before apply runs.
 	ledgerSeq int64
-	// diagnostics collects this fold's skipped-leg records (see
+	// diagnostics collects this decode's skipped-leg records (see
 	// positionSkipSink). Paranoid starts from a fresh builder each ledger; the
 	// incremental strategy resets it in normalizeCarry beside deltas. Both
 	// strategies sort it with sortDecodeDiagnostics before returning it.
@@ -223,7 +222,7 @@ type blendStateBuilder struct {
 	// Always allocated (both strategies populate it identically): the
 	// incremental strategy's snapshot also consults it to recompute exactly the
 	// touched users' cached position blocks instead of rebuilding all of them,
-	// and decodeBlendState/incrementalStrategy.decodeState both fold it (plus
+	// and decodeBlendState/incrementalStrategy.decodeState both merge it (plus
 	// the pool-reserve-remap union, see markPoolRemapDirty) into the
 	// bindings.DirtyPosition set DecodeState/DecodeStateAt exposes via
 	// Adapter.LastDirtyPositions.
@@ -236,7 +235,7 @@ type blendStateBuilder struct {
 	// normalizeCarry beside deltas/diagnostics, and both strategies expose the
 	// same sorted transition set via finalizeTemporaryStateChanges. The
 	// identity comes from the changed ledger key, so a removal is reportable
-	// even when the fold never observed the entry's create.
+	// even when the decoder never observed the entry's create.
 	dirtyTemporary map[string]bindings.TemporaryStateChange
 	// dirtyBackstops collects the identity of every backstop (address, pool)
 	// pair whose valuation inputs this ledger's changes invalidated — the
@@ -268,7 +267,7 @@ type userIdentity struct {
 	pool    string
 }
 
-// oracleBuilder accumulates the parts of a Blend price oracle that a fold needs
+// oracleBuilder accumulates the parts of a Blend price oracle that decode needs
 // to resolve a reserve's USD price: the oracle's asset->index map and the raw
 // per-index price, both decoded from the oracle's own contract_data. Price
 // entries are keyed by the asset's index, so the index->asset map (which the
@@ -305,10 +304,10 @@ type poolBuilder struct {
 	// duplicate_reserve_index diagnostics.
 	ambiguousByIndex map[int32][]string
 	// unknownIndexAssets is the sorted asset IDs of the pool's reserves whose
-	// index is not known (ResData materialized the reserve; its ResConfig never
-	// folded). They are the candidates reported on an unmapped_reserve_index
-	// diagnostic: the skipped leg's true owner is one of them, but which one is
-	// unknowable until its ResConfig arrives.
+	// index is not known (ResData materialized the reserve; its ResConfig was
+	// never decoded). They are the candidates reported on an
+	// unmapped_reserve_index diagnostic: the skipped leg's true owner is one of
+	// them, but which one is unknowable until its ResConfig arrives.
 	unknownIndexAssets []string
 }
 
@@ -387,15 +386,15 @@ func newBlendStateBuilder() *blendStateBuilder {
 	}
 }
 
-// decodeBlendState is the pure-reducer core shared by DecodeState (which returns
-// only the LedgerState) and the in-package tests (which assert the sorted
-// Deltas). It rebuilds the mirror from prior, folds changes, and returns the
-// built state, the silver-debug deltas, the ledger's dirty-positions set (see
-// markPoolRemapDirty and bindings.DirtyPosition), the affected-backstop set
-// (see finalizeDirtyBackstops and bindings.DirtyBackstop), the ledger's
-// skipped-leg diagnostics (see positionSkipSink and
-// bindings.DecodeDiagnostic), and the ledger's auction/queued-reserve
-// transition set (see finalizeTemporaryStateChanges and
+// decodeBlendState is the pure-reducer core shared by DecodeState (which
+// returns only the LedgerState) and the in-package tests (which assert the
+// sorted Deltas). It rebuilds the mirror from prior, applies changes, and
+// returns the built state, the per-ledger state deltas, the ledger's
+// dirty-positions set (see markPoolRemapDirty and bindings.DirtyPosition), the
+// affected-backstop set (see finalizeDirtyBackstops and
+// bindings.DirtyBackstop), the ledger's skipped-leg diagnostics (see
+// positionSkipSink and bindings.DecodeDiagnostic), and the ledger's
+// auction/queued-reserve transition set (see finalizeTemporaryStateChanges and
 // bindings.TemporaryStateChange).
 func (a *Adapter) decodeBlendState(prior *bindings.LedgerState, changes []bindings.ContractDataChange, ledgerSeq int64, closeTime time.Time) (bindings.LedgerState, []typedStateDelta, []bindings.DirtyPosition, []bindings.DirtyBackstop, []bindings.DecodeDiagnostic, []bindings.TemporaryStateChange) {
 	b := newBlendStateBuilder()
@@ -445,7 +444,7 @@ func (a *Adapter) decodeBlendState(prior *bindings.LedgerState, changes []bindin
 // reserveIndexSnapshot derives each pool's reserveByIndex mapping (known,
 // unique ReserveIndex -> AssetID) as of a LedgerState, the same shape
 // loadPrior would reconstruct. nil (no prior) yields an empty snapshot: every
-// pool the fold produces this ledger is then "new", which is correct — a
+// pool the decoder produces this ledger is then "new", which is correct — a
 // first-ledger pending entry can only exist if it was also created this
 // ledger, and that is already in dirtyUsers directly.
 func reserveIndexSnapshot(state *bindings.LedgerState) map[string]map[int32]string {
@@ -496,9 +495,10 @@ func markPoolRemapDirty(dirty map[string]userIdentity, priorIndexes map[string]m
 // finalizeDirtyPositions turns the builder's raw dirty set into the exposed
 // bindings.DirtyPosition list, sorted by (address, pool) for byte-stable
 // output. Kind is derived post-hoc from whether the entry still has positions
-// after the fold (pendingPos presence) rather than tracked incrementally: a
+// after the decode (pendingPos presence) rather than tracked incrementally: a
 // key present in pendingPos is an Upsert (still has positions — including an
-// archived one, see Change 1), a key absent is a Removal (a genuine on-chain
+// archived one, since a TTL lapse or eviction archives rather than purges; see
+// isExplicitOnChainDelete), a key absent is a Removal (a genuine on-chain
 // delete purged it — TTL lapse/eviction never removes the pendingPos entry).
 func finalizeDirtyPositions(dirty map[string]userIdentity, pendingPos map[string]pendingUserPositions) []bindings.DirtyPosition {
 	if len(dirty) == 0 {
@@ -524,13 +524,13 @@ func finalizeDirtyPositions(dirty map[string]userIdentity, pendingPos map[string
 // finalizeTemporaryStateChanges turns the builder's raw temporary-state dirty
 // set into the exposed bindings.TemporaryStateChange list, sorted by (kind,
 // pool, user, auction type, asset) for byte-stable output. Action is derived
-// post-hoc from whether the identity is still live after the fold (auctions /
+// post-hoc from whether the identity is still live after the decode (auctions /
 // queuedReserves presence) rather than tracked incrementally — the same rule
 // finalizeDirtyPositions uses, so a create-then-remove inside one ledger
 // reports the final outcome (removal) and a remove-then-restore reports the
 // upsert. A removal's identity comes from the dirty record itself, never from
-// a prior state slice: a bounded replay that first observes an entry at its
-// removal still reports the transition.
+// a prior state slice: a decode over a bounded ledger range that first
+// observes an entry at its removal still reports the transition.
 func finalizeTemporaryStateChanges(dirty map[string]bindings.TemporaryStateChange, auctions map[string]contracts.AuctionState, queuedReserves map[string]contracts.QueuedReserveState) []bindings.TemporaryStateChange {
 	if len(dirty) == 0 {
 		return nil
@@ -569,8 +569,8 @@ func finalizeTemporaryStateChanges(dirty map[string]bindings.TemporaryStateChang
 	return out
 }
 
-// sortTypedStateDeltas sorts the per-ledger silver-debug deltas by their stable
-// total-order key. Shared by both fold strategies so their delta streams stay
+// sortTypedStateDeltas sorts the per-ledger state deltas by their stable
+// total-order key. Shared by both decode strategies so their delta streams stay
 // comparable entry for entry.
 func sortTypedStateDeltas(deltas []typedStateDelta) {
 	sort.SliceStable(deltas, func(i, j int) bool {
@@ -718,7 +718,7 @@ func (b *blendStateBuilder) loadPrior(prior *bindings.LedgerState) {
 }
 
 // build assembles the typed LedgerState from the mirror, sorting every slice so
-// the output is byte-identical when the same input is folded twice.
+// the output is byte-identical when the same input is decoded twice.
 func (b *blendStateBuilder) build(closeTime time.Time) bindings.LedgerState {
 	// Synthesize each oracle-aggregator's per-asset prices from the carried
 	// aggregator config + registered feed rounds FIRST, so the existing
@@ -756,8 +756,8 @@ func (b *blendStateBuilder) build(closeTime time.Time) bindings.LedgerState {
 		}
 		finalizePoolReserves(pool)
 		// Skipped-leg diagnostics are recorded only for the (address, pool)
-		// pairs this ledger's fold actually touched (the dirty set, including
-		// the pool-remap union). That keeps the records scoped to the fold —
+		// pairs this ledger's decode actually touched (the dirty set, including
+		// the pool-remap union). That keeps the records scoped to the decode —
 		// and identical across the two strategies, whose per-ledger position
 		// recomputation covers exactly the dirty pairs.
 		var sink *positionSkipSink
@@ -959,7 +959,7 @@ func (b *blendStateBuilder) apply(change bindings.ContractDataChange, ledgerSeq 
 	}
 
 	// An entry is live only if the change says so AND its TTL has not lapsed.
-	// Live=false covers eviction (the relay extract sets it from the close meta's
+	// Live=false covers eviction (the caller sets it from the close meta's
 	// evicted-key set, which is reported separately from the change stream);
 	// LiveUntilLedgerSeq < ledgerSeq covers TTL expiry. Either makes the entry
 	// not-live, so we apply it as a delete — otherwise evicted or expired state
@@ -1151,7 +1151,7 @@ func (b *blendStateBuilder) apply(change bindings.ContractDataChange, ledgerSeq 
 		// supply/b-token). The contract only lets EmisConfig be set for a
 		// res_token_id whose reserve already exists (set_pool_emissions panics
 		// otherwise), so ResList/ResConfig for this index is guaranteed to have
-		// already folded — an unresolved index is dropped defensively.
+		// already been decoded — an unresolved index is dropped defensively.
 		resTokenID, ok := variantU32(args)
 		if !ok {
 			return
@@ -1314,16 +1314,16 @@ func (b *blendStateBuilder) apply(change bindings.ContractDataChange, ledgerSeq 
 // isExplicitOnChainDelete reports whether a not-live change is a genuine
 // on-chain removal (the contract itself cleared the entry — CAP-23
 // LEDGER_ENTRY_REMOVED) rather than a TTL lapse or a CAP-0062 network-level
-// eviction. The relay extract (relay.lightgate.xyz/internal/relay/state)
-// threads the underlying xdr.LedgerEntryChangeType through as ChangeType via
-// its .String() form, so a real removal's value ends in "Removed"
+// eviction. The caller is expected to thread the underlying
+// xdr.LedgerEntryChangeType through as ChangeType via its .String() form, so a
+// real removal's value ends in "Removed"
 // (LedgerEntryChangeTypeLedgerEntryRemoved / test fixtures' short "Removed");
 // TTL lapse leaves ChangeType at whatever the entry's last live change was
 // (Created/Updated/Restored, forced not-live by Live/LiveUntilLedgerSeq
-// instead), and a synthesized eviction is tagged "evicted". Both of the
-// latter are restorable — the holder still owns the entry — so Change 1 (see
-// applyDelete's Positions and ResConfig/ResData cases) archives them instead
-// of purging. Only a genuine removal purges, matching prior behavior exactly.
+// instead), and a synthesized eviction is tagged "evicted". Both of the latter
+// are restorable — the holder still owns the entry — so applyDelete (its
+// Positions and ResConfig/ResData cases) archives them instead of purging. Only
+// a genuine removal purges, matching prior behavior exactly.
 func isExplicitOnChainDelete(changeType string) bool {
 	return strings.HasSuffix(changeType, "Removed")
 }
@@ -1613,7 +1613,7 @@ func (b *blendStateBuilder) applyDelete(change bindings.ContractDataChange, key 
 			return
 		}
 		// Absent-not-zero: a not-live accrual entry leaves the user's emission
-		// state absent (it re-folds from bronze on restore), never zero-filled.
+		// state absent (the restore's write decodes it again), never zero-filled.
 		entityKey := typedUserEmisEntityKey(user, change.ContractID, resTokenID)
 		delete(b.userEmis, entityKey)
 		b.addDelta(ledgerSeq, "user_emission", entityKey, false, nil)
@@ -1671,8 +1671,8 @@ func (b *blendStateBuilder) appendUserPositions(pending pendingUserPositions, le
 		return
 	}
 	finalizePoolReserves(pool)
-	// Silver-debug deltas recompute positions for their own payload only — no
-	// diagnostics sink; the fold's skipped-leg records come from build().
+	// Per-ledger state deltas recompute positions for their own payload only —
+	// no diagnostics sink; the decode's skipped-leg records come from build().
 	positions := buildUserPositionsForPending(pool, pending, nil)
 	b.addDelta(ledgerSeq, "user_positions", typedUserEntityKey(pending.user, pending.poolContract), true, positions)
 }
@@ -1689,13 +1689,13 @@ func buildUserPositionsForPending(pool *poolBuilder, pending pendingUserPosition
 func (b *blendStateBuilder) backstopPosition(userBalance backstopUserBalance) contracts.BackstopPosition {
 	poolBalance := b.backstopPools[userBalance.poolContract]
 
-	// Comet LP valuation inputs (V1-09): the folded Comet pool behind this
+	// Comet LP valuation inputs: the decoded Comet pool behind this
 	// backstop's BToken, joined by exact token ID (never vector position), plus
-	// each leg's ledger-pinned price binding (tokenPriceUSD — the folded pool
+	// each leg's ledger-pinned price binding (tokenPriceUSD — the decoded pool
 	// reserve whose asset IS that token, first in ascending pool order). Every
 	// facet stays "" while its identity is incomplete: no Comet, no record, no
-	// supply, or no folded price source is explicit absence, never a fabricated
-	// zero and never a hardcoded $1 (D-09).
+	// supply, or no decoded price source is explicit absence, never a fabricated
+	// zero and never a hardcoded $1.
 	lpSupply := ""
 	blndReserve := ""
 	usdcReserve := ""
@@ -1734,8 +1734,9 @@ func (b *blendStateBuilder) backstopPosition(userBalance backstopUserBalance) co
 	}
 }
 
-// typedBackstopPoolDelta is the silver-debug delta payload for a backstop pool
-// balance (exported fields so addDelta can JSON-marshal it deterministically).
+// typedBackstopPoolDelta is the per-ledger state delta payload for a backstop
+// pool balance (exported fields so addDelta can JSON-marshal it
+// deterministically).
 type typedBackstopPoolDelta struct {
 	PoolContractID string
 	SharesRaw      string
@@ -1752,7 +1753,7 @@ func typedBackstopPool(balance backstopPoolBalance) typedBackstopPoolDelta {
 	}
 }
 
-// typedBackstopEmisDelta is the silver-debug delta payload for a pool's
+// typedBackstopEmisDelta is the per-ledger state delta payload for a pool's
 // BEmisData entry (exported fields so addDelta can JSON-marshal it).
 type typedBackstopEmisDelta struct {
 	PoolContractID string
@@ -1877,14 +1878,14 @@ func applyPoolConfig(pool *poolBuilder, value xdr.ScVal) {
 	}
 }
 
-// applyPoolInstanceStorage folds a Blend pool's instance-storage map. A pool's
-// PoolConfig (oracle, backstop take rate, status) and its backstop address live
-// INSIDE the contract instance's storage, keyed by the symbols "Config" and
-// "Backstop" — they are not emitted as top-level contract_data entries the way
-// "ResList" is. They must be read from the instance here or the pool's oracle
-// link is never populated, and every reserve's USD value and health factor
-// surface as unavailable. The instance is written at deploy and carried across
-// ledgers via loadPrior, so a single Set is enough.
+// applyPoolInstanceStorage decodes a Blend pool's instance-storage map. A
+// pool's PoolConfig (oracle, backstop take rate, status) and its backstop
+// address live INSIDE the contract instance's storage, keyed by the symbols
+// "Config" and "Backstop" — they are not emitted as top-level contract_data
+// entries the way "ResList" is. They must be read from the instance here or the
+// pool's oracle link is never populated, and every reserve's USD value and
+// health factor surface as unavailable. The instance is written at deploy and
+// carried across ledgers via loadPrior, so a single Set is enough.
 func applyPoolInstanceStorage(pool *poolBuilder, instance xdr.ScContractInstance) {
 	if instance.Storage == nil {
 		return
@@ -2102,7 +2103,7 @@ func clearReserveEmisConfig(reserve *reserveBuilder, side uint32) {
 // EmisData entry is the sole source of eps/expiration too (ReserveEmissionData
 // merged the v1 split), so leaving them set after the entry goes not-live
 // would fabricate an active emission that no longer exists on-chain. Under a
-// v1-style split the (persisted) EmisConfig entry re-folds eps/expiration on
+// v1-style split the (persisted) EmisConfig entry sets eps/expiration again on
 // its next write.
 func clearReserveEmisData(reserve *reserveBuilder, side uint32) {
 	if side == 1 {
@@ -2166,7 +2167,7 @@ func (b *blendStateBuilder) applyOracleInstance(oracleID string, value xdr.ScVal
 	}
 	oracle := b.ensureOracle(oracleID)
 	oracle.decimals = decimals
-	// Instance facets beyond the asset list (audit section 4): the quote asset
+	// Instance facets beyond the asset list: the quote asset
 	// (base), the update cadence (res, seconds) and the admin. Each optional —
 	// absent keys leave the field empty, never guessed.
 	if baseKey, ok := canonicalAssetKey(storage["base"]); ok {
@@ -2444,12 +2445,12 @@ func publishedReserveIndexes(reserves []contracts.ReserveState) map[int32]string
 	return out
 }
 
-// positionSkipSink collects one bindings.DecodeDiagnostic per non-zero
-// position leg positionsFromMap skips as unresolvable. It is nil on every path
-// that recomputes positions for a purpose other than this ledger's folded
-// output (silver-debug deltas, the incremental strategy's carried-cache
-// rebuilds), so diagnostics are recorded exactly once per skipped leg per fold
-// and only for the (address, pool) pairs the ledger actually touched.
+// positionSkipSink collects one bindings.DecodeDiagnostic per non-zero position
+// leg positionsFromMap skips as unresolvable. It is nil on every path that
+// recomputes positions for a purpose other than this ledger's decoded output
+// (per-ledger state deltas, the incremental strategy's carried-cache rebuilds),
+// so diagnostics are recorded exactly once per skipped leg per decode and only
+// for the (address, pool) pairs the ledger actually touched.
 type positionSkipSink struct {
 	ledgerSeq int64
 	out       *[]bindings.DecodeDiagnostic
@@ -2458,7 +2459,7 @@ type positionSkipSink struct {
 // skip records the skipped leg. A duplicate known index reports the claiming
 // assets; anything else is an unmapped index and reports the pool's
 // unknown-index reserves as the candidates (the leg's true owner is one of
-// them, but which is unknowable until its ResConfig folds).
+// them, but which is unknowable until its ResConfig is decoded).
 func (s *positionSkipSink) skip(pool *poolBuilder, pending pendingUserPositions, kind contracts.PositionType, index int32, amount string) {
 	diag := bindings.DecodeDiagnostic{
 		LedgerSeq:      s.ledgerSeq,
@@ -2496,7 +2497,8 @@ func positionsFromMap(pool *poolBuilder, pending pendingUserPositions, value xdr
 		// Resolve only through the published known-unique mapping. An
 		// unresolvable non-zero leg is skipped — never guessed through the
 		// zero-value default or a duplicate — and surfaced as a diagnostic so a
-		// bounded replay that cannot attribute it is visibly incomplete.
+		// decode over a bounded ledger range that cannot attribute it is
+		// visibly incomplete.
 		assetID, resolved := pool.reserveByIndex[index]
 		if !resolved {
 			if sink != nil {
@@ -2522,7 +2524,7 @@ func positionsFromMap(pool *poolBuilder, pending pendingUserPositions, value xdr
 	return out
 }
 
-// sortDecodeDiagnostics orders a fold's diagnostics by their stable
+// sortDecodeDiagnostics orders a decode's diagnostics by their stable
 // total-order key so the exposed set is byte-identical run to run regardless
 // of the map-iteration order the legs were collected in.
 func sortDecodeDiagnostics(diags []bindings.DecodeDiagnostic) {
@@ -2969,7 +2971,7 @@ func scStringInt64(raw string) (int64, bool) {
 // These complement the event-decode helpers in decode.go (the canonical scval
 // home for this adapter); the (string, bool) shapes below thinly wrap decode.go
 // (scValAddress / scValSymbol / int128ToString / uint128ToString) so there is a
-// single decode implementation, not the relay's duplicated copies.
+// single decode implementation rather than duplicated copies.
 
 func scSymbol(v xdr.ScVal) (string, bool) {
 	s := scValSymbol(v)
