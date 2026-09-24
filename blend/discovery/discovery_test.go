@@ -137,7 +137,7 @@ func TestDiscoverPoolsFromMeta(t *testing.T) {
 	}
 
 	// The deploy events land in TransactionMetaV3 on protocol 20–22 ledgers and in
-	// TransactionMetaV4 on protocol 23+; a backfill from a mainnet deploy floor
+	// TransactionMetaV4 on protocol 23+; a scan from a mainnet deploy floor
 	// spans both, so both layouts must enumerate identically.
 	for _, meta := range []string{"v3", "v4"} {
 		t.Run(meta, func(t *testing.T) {
