@@ -9,11 +9,11 @@ import (
 	"github.com/stellar/go-stellar-sdk/xdr"
 )
 
-// relayExactEventNames are the 17 exact Blend v2 event names that downstream
+// exactEventNames are the 17 exact Blend v2 event names that downstream
 // activity_type vocabularies carry verbatim. classifyEventName must map each
 // one to itself — any drift here and a downstream normaliser coerces the row to
 // contract_status_change, which then fails its lifecycle-identity constraint.
-var relayExactEventNames = []string{
+var exactEventNames = []string{
 	"supply", "supply_collateral", "withdraw_collateral", "claim",
 	"new_auction", "fill_auction", "delete_auction",
 	"set_status", "set_reserve", "queue_set_reserve", "cancel_set_reserve",
@@ -25,7 +25,7 @@ func TestClassifyEventNameExactV2Vocabulary(t *testing.T) {
 	t.Parallel()
 
 	// Every exact v2 name classifies to itself.
-	for _, name := range relayExactEventNames {
+	for _, name := range exactEventNames {
 		if got := classifyEventName(name); string(got) != name {
 			t.Errorf("classifyEventName(%q) = %q, want exact name", name, got)
 		}
