@@ -184,7 +184,7 @@ func TestRestoredEntryIsLive(t *testing.T) {
 	if g.Closed || !g.Restored || g.CollateralRaw != "24937500000" {
 		t.Fatalf("restored vault not live %#v", g)
 	}
-	// The raw variant is preserved onto the gold row's metadata.
+	// The raw variant is preserved onto the output vault row's metadata.
 	out, err := a.Transform(bindings.TransformInput{LedgerSeq: 62448350, CloseTime: time.Unix(1778093400, 0).UTC(), State: s2})
 	if err != nil {
 		t.Fatal(err)
@@ -192,7 +192,7 @@ func TestRestoredEntryIsLive(t *testing.T) {
 	for _, v := range out.Vaults {
 		if v.Address == gdvz {
 			if v.Status != "active" || v.Metadata["restored"] != "true" {
-				t.Fatalf("restored gold row %#v", v)
+				t.Fatalf("restored vault row %#v", v)
 			}
 			return
 		}
@@ -200,7 +200,7 @@ func TestRestoredEntryIsLive(t *testing.T) {
 	t.Fatal("gdvz row missing")
 }
 
-// TestVaultIndexRestoreIsDirtySignal folds the real RESTORED VaultIndex entry
+// TestVaultIndexRestoreIsDirtySignal applies the real RESTORED VaultIndex entry
 // alone: it must mark the (account, denomination) vault dirty without
 // fabricating vault state.
 func TestVaultIndexRestoreIsDirtySignal(t *testing.T) {
@@ -265,7 +265,7 @@ func TestClosureEmitsTerminalClosedRow(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(out.Vaults) != 2 {
-		t.Fatalf("gold rows %#v", out.Vaults)
+		t.Fatalf("vault rows %#v", out.Vaults)
 	}
 	for _, v := range out.Vaults {
 		switch v.Address {
