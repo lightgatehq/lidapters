@@ -327,7 +327,7 @@ func TestIncrementalParity_OracleCarry(t *testing.T) {
 	}
 }
 
-// TestIncrementalParity_ReflectorGoldenFixture folds the REAL mainnet
+// TestIncrementalParity_ReflectorGoldenFixture decodes the REAL mainnet
 // Reflector fixture (feeds, both storage protocols, aggregator config
 // assembly, close-time staleness) through both modes at real close times.
 func TestIncrementalParity_ReflectorGoldenFixture(t *testing.T) {

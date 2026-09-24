@@ -165,7 +165,7 @@ func ledgersThrough(ledgers []reflectorFixtureLedger, seq int64) []reflectorFixt
 	return out
 }
 
-// TestReflector_GoldenFixture_ProtocolTwo folds the whole fixture — aggregator
+// TestReflector_GoldenFixture_ProtocolTwo decodes the whole fixture — aggregator
 // config assembly, protocol-1 rounds, then the 2026 protocol-2 batched rounds —
 // and asserts the Fixed pool's reserves resolve the hand-derived 7-decimal
 // prices of the newest round.

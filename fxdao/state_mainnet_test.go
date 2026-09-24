@@ -162,7 +162,7 @@ func TestFlatVecKeyIsNotAVault(t *testing.T) {
 
 func TestRestoredEntryIsLive(t *testing.T) {
 	a := testAdapter(t)
-	// First fold the golden ledger, then replay the GDVZ vault write itself as
+	// First decode the golden ledger, then apply the GDVZ vault write again as
 	// a Restored change (28-day TTLs make restore-then-write the protocol's
 	// normal wake-up sequence — restored must decode exactly like live).
 	s1, err := a.DecodeState(nil, goldenLedgerChanges(t), 62448349)
