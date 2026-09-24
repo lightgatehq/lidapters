@@ -1,4 +1,4 @@
-// The incremental state-fold strategy: a persistent builder mirror that lives
+// The incremental state-decode strategy: a persistent builder mirror that lives
 // across ledgers, plus caches for the two O(total state) products the paranoid
 // path re-derives every ledger (the per-user position blocks and their global
 // sort order). Per-ledger work drops from O(total state) to O(changes) plus
@@ -7,7 +7,7 @@
 // Byte-identity with paranoid is the invariant everything here serves. Two
 // mechanisms carry it:
 //
-//  1. normalizeCarry replays, at the start of every ledger, exactly the lossy
+//  1. normalizeCarry reproduces, at the start of every ledger, exactly the lossy
 //     parts of paranoid's build->loadPrior round-trip, so the carried mirror is
 //     indistinguishable from a freshly reloaded one when apply runs.
 //
@@ -21,8 +21,8 @@
 //
 // The parity suite in state_parity_test.go enforces the invariant in CI.
 //
-// Statefulness contract: the adapter carries fold state between calls, so an
-// incremental adapter must not be shared by concurrent folds, and the
+// Statefulness contract: the adapter carries decode state between calls, so an
+// incremental adapter must not be shared by concurrent decodes, and the
 // LedgerState it returns must be treated as immutable — it is the baseline the
 // next call builds on. decodeState is still a pure function of (prior content,
 // changes): the carried mirror is only trusted when prior IS the strategy's own
@@ -156,7 +156,7 @@ func (s *incrementalStrategy) reseed(prior *bindings.LedgerState) {
 
 // refreshOwned re-reads the adapter's ownership sets, exactly as the paranoid
 // path does at the top of every decode. Register* may allocate a fresh map when
-// called for the first time (mid-fold discovery), so a reference taken at
+// called for the first time (mid-decode discovery), so a reference taken at
 // reseed alone could go stale.
 func (s *incrementalStrategy) refreshOwned() {
 	s.mirror.owned = s.adapter.contracts
@@ -166,7 +166,7 @@ func (s *incrementalStrategy) refreshOwned() {
 	s.mirror.protocol = s.adapter.cfg.Protocol
 }
 
-// normalizeCarry replays the lossy parts of the paranoid build->loadPrior
+// normalizeCarry reproduces the lossy parts of the paranoid build->loadPrior
 // round-trip on the live mirror, so this ledger's apply starts from exactly
 // the mirror a fresh reload of lastOut would produce:
 //
@@ -190,7 +190,7 @@ func (s *incrementalStrategy) normalizeCarry() {
 	b.diagnostics = nil
 	b.dirtyTemporary = map[string]bindings.TemporaryStateChange{}
 	// Per-ledger dirty/price-invalidation scratch, reset exactly as a fresh
-	// paranoid builder starts empty: the fold's affected-holder set reflects
+	// paranoid builder starts empty: the decode's affected-holder set reflects
 	// only this ledger's changes.
 	b.dirtyBackstops = map[string]backstopIdentity{}
 	b.changedFeeds = map[string]struct{}{}
@@ -301,10 +301,10 @@ func (s *incrementalStrategy) snapshot(closeTime time.Time) (*bindings.LedgerSta
 		pending, live := b.pendingPos[composite]
 		entry, present := s.index[composite]
 		// Every entry in this loop is a pair this ledger touched, so its block
-		// recomputation is exactly where the fold's skipped-leg diagnostics are
+		// recomputation is exactly where the decode's skipped-leg diagnostics are
 		// recorded — the incremental analog of paranoid's build() running the
 		// sink for the dirty pairs. The carried-cache rebuilds (reseed,
-		// rebuildPendingUsers) pass a nil sink: they are not this fold's output
+		// rebuildPendingUsers) pass a nil sink: they are not this decode's output
 		// computation.
 		sink := &positionSkipSink{ledgerSeq: b.ledgerSeq, out: &b.diagnostics}
 		switch {
