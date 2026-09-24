@@ -80,14 +80,15 @@ type poolSummaryAccumulator struct {
 	hasEffectiveCollateral bool
 	pricePartial           bool
 	// dataPartial / reservePricePartial are the two cold-start staleness axes. A
-	// held reserve leg is dropped from valuation when its ResData has not folded yet
-	// (dataPartial) or when its oracle price is unavailable after reload — map
-	// present but price missing, e.g. an evicted temporary price entry or a price not
-	// yet re-set (reservePricePartial). Either makes the account's health factor
-	// incomplete, so its summary is suppressed rather than emitted over good gold; it
-	// self-heals once the missing data/price re-folds from bronze. reservePricePartial
-	// is scoped to reserve legs only — the backstop pricePartial (LP-token pricing,
-	// always unavailable in the current decode) must NOT suppress an account.
+	// held reserve leg is dropped from valuation when its ResData has not been
+	// decoded yet (dataPartial) or when its oracle price is unavailable after
+	// reload — map present but price missing, e.g. an evicted temporary price
+	// entry or a price not yet re-set (reservePricePartial). Either makes the
+	// account's health factor incomplete, so its summary is suppressed rather than
+	// emitted over a good row a consumer already stored; it self-heals once the
+	// missing data/price is decoded again. reservePricePartial is scoped to
+	// reserve legs only — the backstop pricePartial (LP-token pricing, always
+	// unavailable in the current decode) must NOT suppress an account.
 	dataPartial               bool
 	reservePricePartial       bool
 	aprPartial                bool
@@ -172,8 +173,8 @@ func (a *Adapter) computeState(input bindings.TransformInput, output *bindings.T
 			"scalar_version":   nPool.scalarVersion,
 			"wasm_hash_source": wasmHashSource,
 		}
-		// Pool instance/config facets (audit section 3), added only when
-		// present on-chain so pre-existing rows stay byte-identical.
+		// Pool instance/config facets, added only when present on-chain so
+		// pre-existing rows stay byte-identical.
 		for key, value := range map[string]string{
 			"pool_name":      pool.Name,
 			"pool_admin":     pool.Admin,
@@ -212,8 +213,9 @@ func (a *Adapter) computeState(input bindings.TransformInput, output *bindings.T
 		// (every depositor's shares/tokens summed), not a single user's deposit —
 		// that is the per-user bindings.Position with PositionType=backstop built
 		// below. Emitted whenever the pool declares a backstop ref, even before its
-		// PoolBalance entry has been observed (raw fields empty -> NULL in gold).
-		// q4w_pct is a fraction (shares queued / total shares), not a percentage.
+		// PoolBalance entry has been observed (raw fields empty, which a consumer
+		// stores as NULL). q4w_pct is a fraction (shares queued / total shares), not
+		// a percentage.
 		if pool.BackstopContract != "" {
 			totalShares := parseDecimalOrZero(pool.BackstopSharesRaw)
 			q4wShares := parseDecimalOrZero(pool.BackstopQ4WSharesRaw)
@@ -248,15 +250,16 @@ func (a *Adapter) computeState(input bindings.TransformInput, output *bindings.T
 		}
 
 		for _, reserve := range pool.Reserves {
-			// A reserve whose ResData half has not been folded yet — config present
-			// but no b/d rate or supply — is a cold-start artifact: config-only reload
-			// seeds a pool's reserve config (from persisted config) before the bronze
-			// re-fold restores its data. Emitting it here would value it at zero
-			// (mustParseDecimal("") == 0) and overwrite the reserve's good gold. It is
-			// also absent from the valuation map so a position that references it is
-			// left stale-but-safe rather than valued against zeros. Once the reserve's
-			// ResData re-folds from bronze it is emitted normally. A genuinely-zero but
-			// folded reserve keeps its ResData strings ("0"), so it is not skipped.
+			// A reserve whose ResData half has not been decoded yet — config present but
+			// no b/d rate or supply — is a cold-start artifact: config-only reload seeds
+			// a pool's reserve config (from persisted config) before the restore decodes
+			// its data again. Emitting it here would value it at zero
+			// (mustParseDecimal("") == 0) and overwrite the reserve's good stored row.
+			// It is also absent from the valuation map so a position that references it
+			// is left stale-but-safe rather than valued against zeros. Once the
+			// reserve's ResData is decoded again it is emitted normally. A
+			// genuinely-zero but decoded reserve keeps its ResData strings ("0"), so it
+			// is not skipped.
 			if !reserveHasFoldedData(reserve) {
 				continue
 			}
@@ -303,17 +306,17 @@ func (a *Adapter) computeState(input bindings.TransformInput, output *bindings.T
 				"rate_modifier_scalar":     numString(nPool.rateModifierScalar),
 				"utilization_source":       nReserve.utilizationSource,
 			}
-			// Provenance is producer-owned (V1-05 D-02): this adapter emits a
+			// Provenance is producer-owned: this adapter emits a
 			// reserve price only when the pool's decoded oracle supplied one
 			// (normalizeReserve sets priceAvailable), so a priced reserve
 			// truthfully claims pool_oracle. An unavailable price claims no
-			// source — relay must persist that as null, not guess a label.
+			// source — a consumer must persist that as null, not guess a label.
 			// A constant-base branch of the pool oracle (e.g. a USDC-base
 			// aggregator returning exactly 1.0) is still pool_oracle.
 			if nReserve.priceAvailable {
 				reserveMeta["price_source"] = "pool_oracle"
 			}
-			// Price freshness (audit section 4): the pool oracle's last price
+			// Price freshness: the pool oracle's last price
 			// update time and cadence, only when decoded — a price with no
 			// timestamp stays visibly timestamp-less rather than guessed fresh.
 			if oracle, ok := oracleFreshness[pool.OracleContract]; ok {
@@ -388,7 +391,7 @@ func (a *Adapter) computeState(input bindings.TransformInput, output *bindings.T
 
 	// Structured auction state: each live Auction(AuctionKey) entry surfaced
 	// verbatim (per-asset lot/bid maps, start block, typed label). The slice in
-	// state is already deterministically sorted by the fold.
+	// state is already deterministically sorted by the decode.
 	for _, auction := range input.State.Auctions {
 		output.Auctions = append(output.Auctions, a.auctionRow(auction, input.LedgerSeq, input.CloseTime))
 	}
@@ -400,8 +403,8 @@ func (a *Adapter) computeState(input bindings.TransformInput, output *bindings.T
 		output.QueuedReserves = append(output.QueuedReserves, a.queuedReserveRow(queued, input.LedgerSeq, input.CloseTime))
 	}
 
-	// Pool-level backstop LP valuation (V1-09): with every pool's reserves
-	// normalized, value each aggregate Backstop row against the folded Comet
+	// Pool-level backstop LP valuation: with every pool's reserves
+	// normalized, value each aggregate Backstop row against the decoded Comet
 	// state — component amounts by exact token ID, USD from the same
 	// ledger-pinned reserve prices the per-user path uses. Absent-not-zero
 	// rules are identical to the per-user path: unknown supply, a zero
@@ -409,8 +412,8 @@ func (a *Adapter) computeState(input bindings.TransformInput, output *bindings.T
 	// absent, never a fabricated zero.
 	a.valuePoolBackstops(input, output, reserves)
 
-	// The backstop contract's decoded identity: a Contract row (gold's
-	// contract_type 'backstop') carrying the instance addresses — BToken is
+	// The backstop contract's decoded identity: a Contract row (contract_type
+	// 'backstop') carrying the instance addresses — BToken is
 	// the Comet LP anchoring share valuation — plus reward-zone membership and
 	// drop list as canonical JSON. Only fields present on-chain are emitted.
 	for _, instance := range input.State.BackstopInstances {
@@ -455,7 +458,7 @@ func (a *Adapter) computeState(input bindings.TransformInput, output *bindings.T
 	// Per-user reserve emission accrual: each UserEmis(UserReserveKey) entry
 	// surfaced with its side and — when the pool's reserve list resolves the
 	// index — its asset. AssetID stays "" (never guessed) when unresolvable;
-	// the raw ReserveTokenID always rides along. The relay#26 consumer derives
+	// the raw ReserveTokenID always rides along. A consumer derives
 	// claimable BLND from (index, accrued) against the reserve's own emission
 	// index. The slice in state is already deterministically sorted.
 	for _, emission := range input.State.UserEmissions {
@@ -468,7 +471,7 @@ func (a *Adapter) computeState(input bindings.TransformInput, output *bindings.T
 			if pool.ContractID != emission.PoolContractID {
 				continue
 			}
-			// The same known-unique rule as the fold's reserveByIndex: an
+			// The same known-unique rule as the decoder's reserveByIndex: an
 			// unknown or duplicate index resolves to nothing — the raw
 			// ReserveTokenID still rides along, the asset is never guessed.
 			if reserve, ok := reserveByIndex(pool, emission.ReserveTokenID/2); ok {
@@ -491,13 +494,13 @@ func (a *Adapter) computeState(input bindings.TransformInput, output *bindings.T
 		})
 	}
 
-	// Activities are valued at the same folded oracle price the reserve itself
-	// is valued with at this ledger — the reserves map above is the single price
-	// source, resolved purely from in-state data (pool → oracle fold). An
-	// activity whose asset has no folded reserve price (non-reserve asset such
-	// as a reward token, or a cold-start reserve whose data has not re-folded)
-	// keeps a NULL usd_value with the explicit unavailability marker — never a
-	// fabricated zero.
+	// Activities are valued at the same decoded oracle price the reserve itself is
+	// valued with at this ledger — the reserves map above is the single price
+	// source, resolved purely from in-state data (pool → decoded oracle). An
+	// activity whose asset has no decoded reserve price (non-reserve asset such as
+	// a reward token, or a cold-start reserve whose data has not been decoded
+	// again) keeps a NULL usd_value with the explicit unavailability marker —
+	// never a fabricated zero.
 	for i := range output.Activities {
 		activity := &output.Activities[i]
 		if meta, ok := assetMeta[activity.AssetID]; ok {
@@ -553,10 +556,11 @@ func (a *Adapter) computeState(input bindings.TransformInput, output *bindings.T
 		}
 		reserve, ok := reserves[reserveKey(userPos.PoolContractID, userPos.AssetID)]
 		if !ok {
-			// The reserve is not in the valuation map — its ResData has not folded yet
-			// (config-only cold-start reload). Drop this leg AND mark the account's pool
-			// summary data-incomplete so an incomplete health factor is not emitted over
-			// the account's good gold. Self-heals when the reserve's data re-folds.
+			// The reserve is not in the valuation map — its ResData has not been decoded
+			// yet (config-only cold-start reload). Drop this leg AND mark the account's
+			// pool summary data-incomplete so an incomplete health factor is not emitted
+			// over the account's good stored row. Self-heals when the reserve's data is
+			// decoded again.
 			ensurePoolSummary(userPos.Address, userPos.PoolContractID).dataPartial = true
 			continue
 		}
@@ -665,7 +669,8 @@ func (a *Adapter) computeState(input bindings.TransformInput, output *bindings.T
 			// price-missing after reload, or an evicted/rejected price). Drop the leg
 			// AND mark the account data-incomplete on the price axis so its summary is
 			// suppressed below — a health factor computed without this leg's USD value
-			// must not overwrite the account's good gold. Self-heals on the next price.
+			// must not overwrite the account's good stored row. Self-heals on the next
+			// price.
 			poolSummary.pricePartial = true
 			poolSummary.reservePricePartial = true
 			continue
@@ -742,8 +747,8 @@ func (a *Adapter) computeState(input bindings.TransformInput, output *bindings.T
 		queuedTokens := convertBackstopSharesToTokens(queuedShares, poolShares, poolTokens)
 		totalTokens := convertBackstopSharesToTokens(totalShares, poolShares, poolTokens)
 
-		// Comet LP decomposition, absent-not-zero (D-09): every input must be a
-		// folded observation, never a defaulted one. Missing supply or either
+		// Comet LP decomposition, absent-not-zero: every input must be a
+		// decoded observation, never a defaulted one. Missing supply or either
 		// reserve leaves the components absent; a real stored-zero supply is a
 		// zero DENOMINATOR — the quotient is undefined, so the components and
 		// USD are absent with a diagnostic reason, not silently zero.
@@ -879,11 +884,12 @@ func (a *Adapter) computeState(input bindings.TransformInput, output *bindings.T
 		poolsForAddress := poolSummaries[address]
 
 		// Stale-but-safe: if any of the account's pools is incomplete on either
-		// cold-start axis — a held reserve's ResData has not folded, or its oracle
-		// price is unavailable after a config reload — suppress the whole summary so an
-		// incomplete/null health factor never overwrites the account's good gold. It
-		// re-emits once the missing data/price re-folds. Backstop LP-price partiality
-		// (reservePricePartial is reserve-scoped) deliberately does not suppress.
+		// cold-start axis — a held reserve's ResData has not been decoded, or its
+		// oracle price is unavailable after a config reload — suppress the whole
+		// summary so an incomplete/null health factor never overwrites the account's
+		// good stored row. It re-emits once the missing data/price is decoded again.
+		// Backstop LP-price partiality (reservePricePartial is reserve-scoped)
+		// deliberately does not suppress.
 		incomplete := false
 		for _, pool := range poolsForAddress {
 			if pool.dataPartial || pool.reservePricePartial {
@@ -1122,11 +1128,11 @@ func newV2Pool(v2Scalar, backstopTakeRate string) normalizedPool {
 	}
 }
 
-// reserveHasFoldedData reports whether a reserve's ResData half has been folded
-// from bronze. ResData sets the b/d rate accumulators and the b/d supplies
+// reserveHasFoldedData reports whether a reserve's ResData half has been
+// decoded. ResData sets the b/d rate accumulators and the b/d supplies
 // together, so any one being non-empty means data is present. A reserve rebuilt
 // from persisted config alone (cold-start reload) has all four empty until its
-// bronze re-fold; it must not be valued or emitted until then.
+// ResData is decoded again; it must not be valued or emitted until then.
 func reserveHasFoldedData(r contracts.ReserveState) bool {
 	return r.BRateRaw != "" || r.DRateRaw != "" || r.BSupplyRaw != "" || r.DSupplyRaw != ""
 }
@@ -1287,7 +1293,7 @@ func parseDecimalsInt(v int32) string {
 	return strconv.FormatInt(int64(v), 10)
 }
 
-// auctionRow builds the gold-facing bindings.Auction for one live auction
+// auctionRow builds the output bindings.Auction row for one live auction
 // state. Shared by computeState's full-state loop and
 // ProjectTemporaryStateChanges so both emit the identical row shape.
 func (a *Adapter) auctionRow(auction contracts.AuctionState, ledgerSeq int64, closeTime time.Time) bindings.Auction {
@@ -1314,7 +1320,7 @@ func (a *Adapter) auctionRow(auction contracts.AuctionState, ledgerSeq int64, cl
 	}
 }
 
-// queuedReserveRow builds the gold-facing bindings.QueuedReserve for one
+// queuedReserveRow builds the output bindings.QueuedReserve row for one
 // pending ResInit entry. NewConfig carries only the fields present on-chain.
 // Shared by computeState's full-state loop and ProjectTemporaryStateChanges.
 func (a *Adapter) queuedReserveRow(queued contracts.QueuedReserveState, ledgerSeq int64, closeTime time.Time) bindings.QueuedReserve {
@@ -1356,8 +1362,8 @@ func (a *Adapter) queuedReserveRow(queued contracts.QueuedReserveState, ledgerSe
 }
 
 // ProjectTemporaryStateChanges projects one ledger's auction/queued-reserve
-// transition set (Adapter.LastTemporaryStateChanges) into gold-facing
-// lifecycle rows: a DirtyUpsert change is resolved against the freshly folded
+// transition set (Adapter.LastTemporaryStateChanges) into output
+// lifecycle rows: a DirtyUpsert change is resolved against the freshly decoded
 // state and emitted as an Active=true row with the full payload (the same row
 // computeState emits for that entry); a DirtyRemoval change needs identity
 // only and is emitted as an Active=false row whose payload fields stay zero —
@@ -1366,9 +1372,9 @@ func (a *Adapter) queuedReserveRow(queued contracts.QueuedReserveState, ledgerSe
 // cancelled one). The result carries ONLY AuctionLifecycle and
 // QueuedReserveLifecycle; every other TransformOutput slice stays empty.
 //
-// An upsert whose identity is absent from state (a malformed value the fold
+// An upsert whose identity is absent from state (a malformed value the decoder
 // skipped, or a create-then-remove inside one ledger — which finalizes as a
-// removal anyway) emits nothing: projecting a payload for an entry the fold
+// removal anyway) emits nothing: projecting a payload for an entry the state
 // does not hold would fabricate state.
 func (a *Adapter) ProjectTemporaryStateChanges(state *bindings.LedgerState, changes []bindings.TemporaryStateChange, ledgerSeq int64, closeTime time.Time) *bindings.TransformOutput {
 	out := &bindings.TransformOutput{LedgerSeq: ledgerSeq}
@@ -1559,13 +1565,13 @@ func parseFactorRaw(raw string) (decimal.Decimal, bool) {
 }
 
 // valuePoolBackstops fills each emitted pool-level Backstop row's LP component
-// amounts (BLNDAmountRaw / USDCAmountRaw) and USDValue from the folded Comet
-// state behind the row's backstop contract (V1-09, lidapters#31). The join is
+// amounts (BLNDAmountRaw / USDCAmountRaw) and USDValue from the decoded Comet
+// state behind the row's backstop contract (lidapters#31). The join is
 // by exact identity: pool's backstop contract -> decoded instance -> BToken ->
-// folded Comet pool -> Record.balance of the exact BLND/USDC token IDs. The
-// price legs reuse the normalized reserves' folded oracle prices (the same
+// decoded Comet pool -> Record.balance of the exact BLND/USDC token IDs. The
+// price legs reuse the normalized reserves' decoded oracle prices (the same
 // ledger-pinned source as reserve valuation), bound deterministically in
-// ascending pool-contract order. Absent-not-zero (D-09): unknown LP supply, a
+// ascending pool-contract order. Absent-not-zero: unknown LP supply, a
 // stored-zero denominator, a missing record, or a missing price leg leaves the
 // row's fields absent — no fabricated zero, no hardcoded $1.
 func (a *Adapter) valuePoolBackstops(input bindings.TransformInput, output *bindings.TransformOutput, reserves map[string]normalizedReserve) {
@@ -1613,7 +1619,7 @@ func (a *Adapter) valuePoolBackstops(input bindings.TransformInput, output *bind
 		lpSupply := parseDecimalOrZero(comet.TotalSharesRaw)
 		if lpSupply.IsZero() {
 			// Stored-zero denominator: the quotient is undefined — absent, not
-			// silently zero (D-09).
+			// silently zero.
 			continue
 		}
 		blndReserveRaw, usdcReserveRaw := "", ""
@@ -1641,7 +1647,7 @@ func (a *Adapter) valuePoolBackstops(input bindings.TransformInput, output *bind
 		usdcComponent := fixedMulFloor(lpTokens, parseDecimalOrZero(usdcReserveRaw), lpSupply)
 		row.BLNDAmountRaw = numString(blndComponent)
 		row.USDCAmountRaw = numString(usdcComponent)
-		// Component decimals match the fold's stamped BLNDDecimals/USDCDecimals
+		// Component decimals match the decoder's stamped BLNDDecimals/USDCDecimals
 		// (both 7 on the pinned deployment).
 		usd := blndComponent.Div(decimal.New(1, 7)).Mul(blndPrice).
 			Add(usdcComponent.Div(decimal.New(1, 7)).Mul(usdcPrice))
