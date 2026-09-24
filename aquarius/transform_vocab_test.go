@@ -1,11 +1,11 @@
 package aquarius
 
 // Enumerating tests for the exact per-wasm event vocabulary. The era tables
-// in transform.go mirror relay.rs deployments/aquarius.pubnet.toml; the rows
-// here are an independent transcription of the same file, so any drift
-// between code and the deployment data fails one-to-one. The activity subset
-// must additionally match the frozen aquarius_activities CHECK constraint
-// (relay.rs docs/gold-ddl/019_aquarius_gold.sql) exactly — the blend lesson:
+// in transform.go and the rows here are independent transcriptions of the
+// same per-wasm event vocabulary, so any drift between code and the
+// deployment data fails one-to-one. The activity subset must additionally
+// match the frozen activity vocabulary that downstream consumers enforce as
+// a CHECK constraint exactly — the blend lesson:
 // substring classification silently quarantined real events; exact names or
 // nothing.
 
@@ -18,8 +18,8 @@ import (
 	"github.com/stellar/go-stellar-sdk/xdr"
 )
 
-// goldActivityVocabulary is the aquarius_activities CHECK constraint from
-// 019_aquarius_gold.sql, transcribed character-exactly.
+// goldActivityVocabulary is the frozen Aquarius activity vocabulary,
+// transcribed character-exactly.
 var goldActivityVocabulary = []string{
 	// pool-level LP ops (liquidity_pool_events vocabulary)
 	"deposit_liquidity", "withdraw_liquidity", "trade",
@@ -238,7 +238,7 @@ func vocabEvent(t *testing.T, contractID, name string, ledgerSeq int64, withUser
 
 // TestExactNameEmission pins that an in-vocabulary event emits its EXACT
 // on-chain name as the activity type — no translation layer (the old matcher
-// rewrote deposit_liquidity to add_liquidity, which gold's CHECK rejects).
+// rewrote deposit_liquidity to add_liquidity, which the frozen vocabulary rejects).
 func TestExactNameEmission(t *testing.T) {
 	a, err := NewWithConfig(Config{})
 	if err != nil {
