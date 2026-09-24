@@ -112,7 +112,7 @@ func TestDecodeState_RunTwiceByteIdentical(t *testing.T) {
 }
 
 // TestApplyReserveConfig_DecodesEnabledAndReactivity is the decode-gap-audit
-// (lidapters#9 / relay#27) regression: ReserveConfig's `enabled` bool and
+// (lidapters#9) regression: ReserveConfig's `enabled` bool and
 // `reactivity` u32 are in the same ScVal map as c_factor/l_factor, so decoding
 // them is a one-line addition to applyReserveConfig, not a new chain read.
 func TestApplyReserveConfig_DecodesEnabledAndReactivity(t *testing.T) {
