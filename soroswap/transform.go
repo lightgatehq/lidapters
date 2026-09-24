@@ -15,9 +15,8 @@ import (
 // The activity vocabulary is the complete pair event set from the pinned
 // protocol sources (contracts/pair/src/event.rs:33,64,98,115,133 @ bb90a65),
 // stored under the EXACT on-chain event names. A consumer that constrains the
-// stored activity type (for example with a CHECK constraint on
-// soroswap_activities.activity_type) must allow exactly this set; extend that
-// constraint with a new migration rather than editing an applied one.
+// stored activity type must allow at least this set; extend that constraint
+// with a new migration rather than editing an applied one.
 var pairActivityVocabulary = map[string]struct{}{
 	"deposit":  {},
 	"swap":     {},

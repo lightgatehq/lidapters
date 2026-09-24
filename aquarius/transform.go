@@ -120,11 +120,11 @@ func appendRangeComponents(out *bindings.TransformOutput, group string, p bindin
 
 // eventEra is one row of the per-wasm event-era table: whether the exact event
 // name is a served activity, and the first ledger the name was observed
-// on-chain for its contract class. Consumers that keep their own copy of this
-// table must match it character-exactly. The vocabulary only ever GREW across
-// wasm upgrades, so one floor per (class, name) is a faithful era encoding. A
-// name outside its class's table, or seen before its floor, quarantines loudly:
-// the fix is a new table row (data), never a keyword match (code).
+// on-chain for its contract class. Names are matched character-exactly. The
+// vocabulary only ever GREW across wasm upgrades, so one floor per (class,
+// name) is a faithful era encoding. A name outside its class's table, or seen
+// before its floor, quarantines loudly: the fix is a new table row (data),
+// never a keyword match (code).
 type eventEra struct {
 	activity   bool
 	fromLedger int64

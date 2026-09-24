@@ -234,10 +234,10 @@ func (a *Adapter) Transform(input bindings.TransformInput) (*bindings.TransformO
 		txHash := evt.TxHash
 		eventIndex := evt.EventIndex
 		if decoded.activityType == contracts.ActivityTypeStatusChange {
-			// Gold's lifecycle_synthetic_identity constraint keys a status change
-			// as a per-ledger contract fact, not a per-event one:
-			// tx_hash = status:<contract>:<ledger>, event_index = 0. The raw
-			// event's tx hash and index would violate the constraint, so emit the
+			// A status change is a per-ledger contract fact, not a per-event one,
+			// and its identity is keyed that way: tx_hash =
+			// status:<contract>:<ledger>, event_index = 0. Carrying the raw
+			// event's tx hash and index would break that invariant, so emit the
 			// synthetic identity (and derive the stable ID from it too, so it stays
 			// deterministic regardless of which raw event carried the change).
 			txHash = statusChangeTxHash(evt.ContractID, evt.LedgerSeq)

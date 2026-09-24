@@ -54,9 +54,10 @@ source = "Aquarius documentation; deploy ledger not yet curated"
 notes = "Canonical public Aquarius AMM router. Deliberately unpinned and fail-closed until its exact create_contract ledger is verified."
 # Resolved by exact stellar.expert close-time match (HIGH). deploy =
 # create_contract ledger = where the oracle INSTANCE entry (asset->index) is
-# written = the earliest safe starting ledger; start later and the asset->index
-# map is never observed. Consumers should read these pins from this table
-# rather than copying them into their own configuration.
+# written = the latest start guaranteed to see that write; a later start sees
+# the map only if an admin call rewrites the instance afterwards. Consumers
+# should read these pins from this table rather than copying them into their
+# own configuration.
 
 [[pin]]
 network = "public"
