@@ -72,7 +72,7 @@ func TestConfigRecords_EmitsLowFrequencyConfigOnly(t *testing.T) {
 }
 
 // TestConfigRecords_Deterministic pins that the emitted records are a pure,
-// run-twice byte-identical function of the fold inputs.
+// run-twice byte-identical function of the decode inputs.
 func TestConfigRecords_Deterministic(t *testing.T) {
 	t.Parallel()
 	layout := loadOracleLayout(t)
@@ -92,7 +92,7 @@ func TestConfigRecords_Deterministic(t *testing.T) {
 
 // TestHydrateConfig_RoundTripsConfigOnly proves the persisted records rebuild a
 // seed LedgerState with the COMPLETE oracle (map + prices), pool config and reserve
-// config, and no reserve DATA / positions (those re-fold from bronze). The oracle's
+// config, and no reserve DATA / positions (those are decoded again from the ledger). The oracle's
 // prices are reloaded, not self-healed, so a restart has no null-HF window.
 func TestHydrateConfig_RoundTripsConfigOnly(t *testing.T) {
 	t.Parallel()
@@ -146,10 +146,10 @@ func TestHydrateConfig_RoundTripsConfigOnly(t *testing.T) {
 
 // TestEmitGuard_ConfigOnlySeedWritesNoValuedRows is the no-null-overwrite proof
 // (ResData axis) at the adapter tier: transforming a config-only seed (reserves
-// with config but no folded ResData, no positions) emits ZERO reserves and ZERO
-// summaries, so a restart cannot overwrite good gold with zero-valued rows before
-// the data re-folds from bronze. The price axis (map present, price missing) is
-// covered by the relay's TestRelayRestart_PriceUnavailableSuppressesSummary.
+// with config but no decoded ResData, no positions) emits ZERO reserves and ZERO
+// summaries, so a restart cannot overwrite good output rows with zero-valued rows
+// before the data is decoded again from the ledger. The price axis (map present,
+// price missing) is covered by the consuming host's own restart test.
 func TestEmitGuard_ConfigOnlySeedWritesNoValuedRows(t *testing.T) {
 	t.Parallel()
 	layout := loadOracleLayout(t)
@@ -189,8 +189,8 @@ func TestEmitGuard_ConfigOnlySeedWritesNoValuedRows(t *testing.T) {
 // TestEmitGuard_SuppressesDataIncompleteSummary proves the no-null-overwrite
 // property extends to per-account summaries on the ResData axis: after a
 // config-only reload a cross-asset account whose one reserve's ResData has not
-// folded yet is NOT emitted with an incomplete (single-leg) health factor — its
-// summary is withheld so the account's good gold is preserved (stale-but-safe),
+// decoded yet is NOT emitted with an incomplete (single-leg) health factor — its
+// summary is withheld so the account's good output row is preserved (stale-but-safe),
 // while the reserve that
 // does have data is still emitted.
 func TestEmitGuard_SuppressesDataIncompleteSummary(t *testing.T) {
@@ -213,7 +213,7 @@ func TestEmitGuard_SuppressesDataIncompleteSummary(t *testing.T) {
 	}
 
 	// Drop the USDC ResData: the account's USDC liability leg then references a
-	// config-only reserve (no folded data), so its summary must be suppressed.
+	// config-only reserve (no decoded data), so its summary must be suppressed.
 	usdc := assetIDByCode(layout, "USDC")
 	partial := dropResDataFor(t, full, usdc)
 	partialState, err := adapter.DecodeState(nil, partial, layout.LedgerSeq)
@@ -265,13 +265,13 @@ func dropResDataFor(t *testing.T, changes []bindings.ContractDataChange, assetID
 	return out
 }
 
-// TestConfigRecords_EmisConfigOnReserveRecord proves EmisConfig (relay#26) rides
+// TestConfigRecords_EmisConfigOnReserveRecord proves EmisConfig rides
 // the SAME kindReserve config record as ResConfig — not a tombstone, and not a
 // separate record — so a restart reloads the reserve's active emission config
 // alongside its factors/curve, closing the same null-window class of bug the
 // oracle price / enabled+reactivity persistence already closed. EmisData
 // (index/last_time) is deliberately NOT asserted here — it is accrual data and
-// re-folds from bronze, same split as ResData.
+// is decoded again from the ledger, same split as ResData.
 func TestConfigRecords_EmisConfigOnReserveRecord(t *testing.T) {
 	t.Parallel()
 
@@ -347,7 +347,7 @@ func TestConfigRecords_EmisConfigOnReserveRecord(t *testing.T) {
 // --- helpers ---------------------------------------------------------------
 
 // ownedChanges filters a change set to the adapter's owned contracts, mirroring
-// what the relay projector hands to ConfigRecords.
+// what the consuming host hands to ConfigRecords.
 func ownedChanges(a *Adapter, changes []bindings.ContractDataChange) []bindings.ContractDataChange {
 	out := make([]bindings.ContractDataChange, 0, len(changes))
 	for _, c := range changes {
@@ -422,10 +422,10 @@ func TestHydrateConfig_LegacyReservePayloadMarksIndexKnown(t *testing.T) {
 	}
 }
 
-// TestPoolConfigBody_AbsentOracleIsNull pins the pool payload's null vocabulary
-// (relay#153 / daccred/relay.rs#99): a pool whose PoolConfig the fold has not
-// seen states that as JSON null under an always-present key, never as "". Gold's
-// generated oracle_ref reads NULL for the former and ” for the latter, which is
+// TestPoolConfigBody_AbsentOracleIsNull pins the pool payload's null vocabulary:
+// a pool whose PoolConfig the decoder has not seen states that as JSON null
+// under an always-present key, never as "". A downstream generated oracle_ref
+// reads NULL for the former and ” for the latter, which is
 // what lets a consumer tell a stated absence from a row written before the
 // vocabulary existed. Hydration accepts both, so legacy rows still reload.
 func TestPoolConfigBody_AbsentOracleIsNull(t *testing.T) {
@@ -467,7 +467,7 @@ func TestPoolConfigBody_AbsentOracleIsNull(t *testing.T) {
 }
 
 // TestReserveByIndex_RequiresKnownUniqueIndex pins the resolution rule the
-// config-record and user-emission paths share with the fold: only a known,
+// config-record and user-emission paths share with the decoder: only a known,
 // unique index resolves. An unknown index (never configured) and a duplicate
 // known index are both unresolved — never a guessed winner.
 func TestReserveByIndex_RequiresKnownUniqueIndex(t *testing.T) {
