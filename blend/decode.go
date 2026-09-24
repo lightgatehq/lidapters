@@ -45,7 +45,8 @@ func decodeEvent(evt bindings.RawEventEnvelope) decodedEvent {
 		return out
 	}
 
-	// For ingest-produced events, topic is a JSON blob with human and XDR forms.
+	// When the event source encodes topics as JSON, topic is a JSON blob with
+	// human and XDR forms.
 	if parsed := decodeTopicJSON(evt.Topic); parsed.activityType != "" {
 		mergeDecoded(&out, parsed)
 	}
@@ -419,12 +420,12 @@ func looksBlend(evt bindings.RawEventEnvelope) bool {
 // activity type carrying the exact on-chain name. This replaced a substring
 // keyword matcher that silently dropped the auction and emission events
 // (fill_auction — the on-chain shape of a liquidation — new_auction,
-// delete_auction, gulp_emissions, reserve_emission_update, gulp, defaulted_debt,
-// set_admin, update_pool, ...) and misfiled others (supply → deposit,
-// set_reserve → contract_status_change). The names must stay in lock-step with
-// gold's activity_type enum (relay migration 017, relay.lightgate.xyz#65/#75).
-// The auction subtype (user_liquidation / bad_debt / interest) is a u32 topic
-// discriminator in v2, not part of the event symbol.
+// delete_auction, gulp_emissions, reserve_emission_update, gulp,
+// defaulted_debt, set_admin, update_pool, ...) and misfiled others (supply →
+// deposit, set_reserve → contract_status_change). The names must stay in
+// lock-step with the activity_type enum a consumer stores them in. The auction
+// subtype (user_liquidation / bad_debt / interest) is a u32 topic discriminator
+// in v2, not part of the event symbol.
 var exactEventActivities = map[string]contracts.ActivityType{
 	"supply":                  contracts.ActivityTypeSupply,
 	"withdraw":                contracts.ActivityTypeWithdraw,
