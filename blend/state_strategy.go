@@ -1,4 +1,4 @@
-// The state-fold strategy seam: one object owns the whole per-ledger fold
+// The state-decode strategy seam: one object owns the whole per-ledger decode
 // chain — prior-load, change apply, snapshot/build — and is selected once at
 // New (Config.StateMode). Strategies swap as whole classes, never as
 // per-component flags threaded through calls.
@@ -14,7 +14,7 @@
 //     byte for byte.
 //
 //   - incremental carries the builder mirror across ledgers and re-derives only
-//     what a ledger's changes touched, at O(changes) fold cost instead of
+//     what a ledger's changes touched, at O(changes) decode cost instead of
 //     O(total state). Its output MUST be byte-identical to paranoid's — same
 //     slice contents, same ordering, same serialized checksums — on every
 //     ledger; the parity suite in state_parity_test.go enforces this in CI and
@@ -22,7 +22,7 @@
 //
 // Paranoid is not legacy. It stays the default, it defines the semantics, and
 // every incremental optimization is validated against it. Consumers opt into
-// incremental deliberately (the relay config-selects it per deployment).
+// incremental deliberately (typically selected per deployment in config).
 package blend
 
 import (
@@ -32,10 +32,10 @@ import (
 	"github.com/lightgatehq/lidapters/blend/contracts"
 )
 
-// stateStrategy folds one ledger's owned contract_data changes into the next
-// typed LedgerState (plus the in-package silver-debug deltas, the exposed
-// dirty-positions set — see bindings.DirtyPosition — the fold's skipped-leg
-// diagnostics — see bindings.DecodeDiagnostic — and the fold's
+// stateStrategy applies one ledger's owned contract_data changes to the next
+// typed LedgerState (plus the in-package debug deltas, the exposed
+// dirty-positions set — see bindings.DirtyPosition — the decode's skipped-leg
+// diagnostics — see bindings.DecodeDiagnostic — and the decode's
 // auction/queued-reserve transition set — see bindings.TemporaryStateChange).
 // Implementations own the entire chain; DecodeState/DecodeStateAt delegate
 // here blindly.
