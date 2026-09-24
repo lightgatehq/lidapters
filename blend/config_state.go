@@ -1,19 +1,21 @@
 package blend
 
 // Blend's side of the config-persistence inversion of control. The adapter owns
-// its low-frequency config: it declares the storage schema (ConfigSchema), emits
-// this ledger's config changes as opaque records (ConfigRecords), and rebuilds the
-// seed LedgerState from persisted records on cold start (HydrateConfig). The relay
-// is a generic host that stores and returns records without decoding them.
+// its low-frequency config: it declares the storage schema (ConfigSchema),
+// emits this ledger's config changes as opaque records (ConfigRecords), and
+// rebuilds the seed LedgerState from persisted records on cold start
+// (HydrateConfig). The host is generic: it stores and returns records without
+// decoding them.
 //
 // Config vs data split (persist ONLY the low-frequency half):
 //   - oracle: decimals + asset->index map (NOT the per-index prices).
 //   - pool:   oracle/backstop refs, status, take rate, wasm hash (NOT reserves).
 //   - reserve: ResConfig — index, decimals, factors, rate-curve, caps (NOT ResData:
-//     the b/d rate accumulators and supplies, which re-fold from bronze).
+//     the b/d rate accumulators and supplies, which are decoded again from
+//     ledger changes).
 //
-// All three methods are pure: ConfigRecords/HydrateConfig read only their inputs,
-// so the fold stays run-twice byte-identical.
+// All three methods are pure: ConfigRecords/HydrateConfig read only their
+// inputs, so decoding stays run-twice byte-identical.
 
 import (
 	"encoding/json"
@@ -147,9 +149,10 @@ func (a *Adapter) ConfigSchema() []bindings.ConfigTableSchema {
 				{Name: "supply_cap", SQLType: "numeric", Expr: "NULLIF(payload->>'supply_cap','')::numeric"},
 				factor("reactivity", "reactivity"),
 				{Name: "enabled", SQLType: "boolean", Expr: "NULLIF(payload->>'enabled','')::boolean"},
-				// Emission config (eps/expiration), not emission data (index/last_time
-				// re-folds from bronze, same split as ResConfig vs ResData above). Raw
-				// token-amount-per-second, so plain numeric like supply_cap (no /1e7).
+				// Emission config (eps/expiration), not emission data (index/last_time is
+				// decoded again from ledger changes, same split as ResConfig vs ResData
+				// above). Raw token-amount-per-second, so plain numeric like supply_cap (no
+				// /1e7).
 				{Name: "supply_emis_eps", SQLType: "numeric", Expr: "NULLIF(payload->>'supply_emis_eps','')::numeric"},
 				{Name: "supply_emis_expiration", SQLType: "bigint", Expr: "NULLIF(payload->>'supply_emis_expiration','')::bigint"},
 				{Name: "borrow_emis_eps", SQLType: "numeric", Expr: "NULLIF(payload->>'borrow_emis_eps','')::numeric"},
@@ -181,7 +184,7 @@ type oracleConfigBody struct {
 }
 
 // aggregatorConfigBody persists an oracle-aggregator's carried configuration —
-// without it, a restarted fold would re-price only when the aggregator's
+// without it, a restarted decoder would re-price only when the aggregator's
 // instance is next rewritten, which on mainnet is effectively never.
 type aggregatorConfigBody struct {
 	MaxAgeS    int64                 `json:"max_age_s"`
@@ -206,7 +209,7 @@ type aggregatorAssetBody struct {
 }
 
 // feedConfigBody persists a Reflector feed's carried state including its
-// bounded recent rounds, so a restarted fold prices immediately instead of
+// bounded recent rounds, so a restarted decoder prices immediately instead of
 // waiting out the feed's next publication.
 type feedConfigBody struct {
 	LastRoundMs int64           `json:"last_round_ms"`
@@ -235,8 +238,8 @@ type oraclePriceBody struct {
 }
 
 // Oracle and Backstop are pointers so the payload can state an absence: a pool
-// whose PoolConfig / Backstop entry the fold has not seen is written as JSON
-// null, never as "" (relay#153). The key is always present (no omitempty), so
+// whose PoolConfig / Backstop entry the decoder has not seen is written as JSON
+// null, never as "". The key is always present (no omitempty), so
 // the shape stays five keys and a missing key still reads as a drifted payload
 // rather than a stated absence. Rows written before this vocabulary carry ""
 // for the same state; hydration reads both as unset.
@@ -281,7 +284,7 @@ type reserveConfigBody struct {
 	Reactivity string `json:"reactivity"`
 	Enabled    bool   `json:"enabled"`
 	// Emission config only (eps/expiration) — emission DATA (index/last_time)
-	// re-folds from bronze, same split as ResData above.
+	// is decoded again from ledger changes, same split as ResData above.
 	SupplyEmisEPS        string `json:"supply_emis_eps"`
 	SupplyEmisExpiration string `json:"supply_emis_expiration"`
 	BorrowEmisEPS        string `json:"borrow_emis_eps"`
@@ -291,11 +294,11 @@ type reserveConfigBody struct {
 // --- record emission (chain-signal, pure) -----------------------------------
 
 // ConfigRecords emits this ledger's config changes. It classifies the owned
-// contract-data keys to find which config entities changed (pool Config/ResList,
-// reserve ResConfig, oracle instance), then reads each dirty entity's current
-// config from the freshly folded next state and serializes it. A removed config
-// key yields a tombstone. Prices, ResData, positions and backstop balances are
-// data, not config, and are never emitted here.
+// contract-data keys to find which config entities changed (pool
+// Config/ResList, reserve ResConfig, oracle instance), then reads each dirty
+// entity's current config from the freshly decoded next state and serializes
+// it. A removed config key yields a tombstone. Prices, ResData, positions and
+// backstop balances are data, not config, and are never emitted here.
 func (a *Adapter) ConfigRecords(next *bindings.LedgerState, changes []bindings.ContractDataChange, ledgerSeq int64) []bindings.ConfigRecord {
 	if next == nil {
 		next = &bindings.LedgerState{}
@@ -338,7 +341,7 @@ func (a *Adapter) ConfigRecords(next *bindings.LedgerState, changes []bindings.C
 		removed := !configChangeLive(ch, ledgerSeq)
 		if key.Type == xdr.ScValTypeScvLedgerKeyContractInstance {
 			// A contract instance is config for whichever entity it belongs to. Use
-			// the folded next state to tell an oracle instance (asset map) from a
+			// the decoded next state to tell an oracle instance (asset map) from a
 			// pool instance (wasm hash); a removed instance that is gone from next is
 			// left to the Config/ResList removal path (real decommission signal).
 			// A Reflector feed's instance is rewritten every round and an
@@ -381,13 +384,13 @@ func (a *Adapter) ConfigRecords(next *bindings.LedgerState, changes []bindings.C
 					dirtyReserve[reserveRef{ch.ContractID, asset}] = removed
 				}
 			case "EmisConfig":
-				// EmisConfig is config (persisted); its sibling EmisData is accrual
-				// data and re-folds from bronze, so it is never classified here. An
-				// EmisConfig change only ever re-marshals the reserve's current
-				// state (which by now reflects this ledger's decode) — it never
-				// tombstones the reserve record, even when the EmisConfig entry
-				// itself was evicted/expired, because the reserve's core
-				// (ResConfig-derived) config is unaffected by an emission change.
+				// EmisConfig is config (persisted); its sibling EmisData is accrual data
+				// and is decoded again from ledger changes, so it is never classified here.
+				// An EmisConfig change only ever re-marshals the reserve's current state
+				// (which by now reflects this ledger's decode) — it never tombstones the
+				// reserve record, even when the EmisConfig entry itself was
+				// evicted/expired, because the reserve's core (ResConfig-derived) config is
+				// unaffected by an emission change.
 				if resTokenID, ok := variantU32(args); ok {
 					if pool, ok := poolByID[ch.ContractID]; ok {
 						if reserve, ok := reserveByIndex(pool, int32(resTokenID/2)); ok {
@@ -493,9 +496,9 @@ func (a *Adapter) ConfigRecords(next *bindings.LedgerState, changes []bindings.C
 	return records
 }
 
-// configChangeLive mirrors the live decision the state fold applies to a change:
-// live requires a present value AND a TTL that has not lapsed. Eviction or TTL
-// expiry of a config key is a removal (tombstone).
+// configChangeLive mirrors the live decision the state decoder applies to a
+// change: live requires a present value AND a TTL that has not lapsed. Eviction
+// or TTL expiry of a config key is a removal (tombstone).
 func configChangeLive(ch bindings.ContractDataChange, ledgerSeq int64) bool {
 	if !ch.Live || ch.ValueXDR == nil {
 		return false
@@ -520,9 +523,10 @@ func reserveByAsset(pool contracts.PoolState, assetID string) (contracts.Reserve
 }
 
 // reserveByIndex resolves a reserve by its index under the same known-unique
-// rule the fold's reserveByIndex applies: only a reserve whose index came from
-// a decoded ResConfig participates, and only when it is the single claimant —
-// an unknown or duplicate index is unresolved, never a guessed winner.
+// rule the decoder's reserveByIndex applies: only a reserve whose index came
+// from a decoded ResConfig participates, and only when it is the single
+// claimant — an unknown or duplicate index is unresolved, never a guessed
+// winner.
 func reserveByIndex(pool contracts.PoolState, index int32) (contracts.ReserveState, bool) {
 	var found contracts.ReserveState
 	claimants := 0
@@ -566,7 +570,7 @@ func marshalOracleBody(o contracts.OracleState) []byte {
 // extended blend.oracle payload. The top-level assets list mirrors the
 // synthetic asset->index map resolveAggregatorPrices derives (sorted asset IDs,
 // index = position), so the blend_oracle_asset view reads the same mapping the
-// fold prices with.
+// decoder prices with.
 func marshalAggregatorBody(a contracts.OracleAggregatorState) []byte {
 	body := oracleConfigBody{
 		Decimals: a.Decimals,
@@ -684,10 +688,11 @@ func mustMarshal(v any) []byte {
 // --- hydration (pure) -------------------------------------------------------
 
 // HydrateConfig rebuilds the seed LedgerState from the latest-per-entity config
-// records the host loaded (tombstones already excluded). The result carries pool
-// config (with reserve config attached) and the oracle asset->index map with
-// decimals; it carries NO prices, NO ResData and NO positions — those re-fold from
-// bronze after the restart. Reserve records whose pool was not loaded are dropped.
+// records the host loaded (tombstones already excluded). The result carries
+// pool config (with reserve config attached) and the oracle asset->index map
+// with decimals; it carries NO prices, NO ResData and NO positions — those are
+// decoded again from ledger changes after the restart. Reserve records whose
+// pool was not loaded are dropped.
 func (a *Adapter) HydrateConfig(records []bindings.ConfigRecord) (*bindings.LedgerState, error) {
 	pools := map[string]*contracts.PoolState{}
 	reservesByPool := map[string][]contracts.ReserveState{}
