@@ -108,7 +108,7 @@ func TestTransform_ReserveAndActivityCarryDecodedAssetSymbol(t *testing.T) {
 
 // TestTransform_UndecodedAssetLeavesSymbolEmpty proves the absence of decoded
 // metadata leaves Reserve.Metadata's asset_symbol/asset_name and
-// Activity.AssetSymbol empty rather than falling back to a guess — the relay
+// Activity.AssetSymbol empty rather than falling back to a guess — a downstream
 // store's firstNonEmpty(asset_symbol, contract_id) fallback is what turns this
 // into the address display, not lidapters.
 func TestTransform_UndecodedAssetLeavesSymbolEmpty(t *testing.T) {
