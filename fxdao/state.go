@@ -12,10 +12,10 @@ import (
 	"github.com/stellar/go-stellar-sdk/xdr"
 )
 
-// DecodeState is a pure reducer: (prior, changes, ledgerSeq) -> next. It folds
-// persistent Vault entries, VaultIndex writes (dirty-signal only — the value
-// duplicates the vault's own index field) and the instance VaultsInfo maps.
-// Restored changes are LIVE writes with the raw variant preserved; only a
+// DecodeState is a pure reducer: (prior, changes, ledgerSeq) -> next. It
+// decodes persistent Vault entries, VaultIndex writes (dirty-signal only — the
+// value duplicates the vault's own index field) and the instance VaultsInfo
+// maps. Restored changes are LIVE writes with the raw variant preserved; only a
 // genuine Removed change closes a vault.
 func (a *Adapter) DecodeState(prior *bindings.LedgerState, changes []bindings.ContractDataChange, ledgerSeq int64) (*bindings.LedgerState, error) {
 	next := cloneState(prior)
@@ -41,7 +41,7 @@ func (a *Adapter) DecodeState(prior *bindings.LedgerState, changes []bindings.Co
 		if c.ValueXDR == nil || c.ChangeType == "Removed" {
 			// Only a genuine LedgerEntryRemoved closes a vault. A TTL lapse /
 			// eviction (nil value without Removed) archives — the entry restores
-			// later with its bytes intact, so the last folded state is kept.
+			// later with its bytes intact, so the last decoded state is kept.
 			if c.ChangeType != "Removed" {
 				continue
 			}
@@ -53,7 +53,7 @@ func (a *Adapter) DecodeState(prior *bindings.LedgerState, changes []bindings.Co
 				v.Account = account
 				v.Denomination = denom
 				// The removal itself proves the vault existed on-chain, even when
-				// its live write predates the folded window.
+				// its live write predates the decoded window.
 				v.HadVault = true
 				v.Closed = true
 				v.Restored = false
