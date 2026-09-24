@@ -134,7 +134,7 @@ func TestDecodePairInstancesU32Layout(t *testing.T) {
 			t.Fatalf("%s fabricated fee fields %#v", p.ContractID, p)
 		}
 	}
-	// The pair's own LP-token METADATA folds as asset identity.
+	// The pair's own LP-token METADATA decodes as asset identity.
 	syms := map[string]string{}
 	for _, m := range s.AMMAssets {
 		syms[m.ContractID] = m.Symbol
@@ -222,7 +222,7 @@ func TestDecodeBalancesAndProRataAnchors(t *testing.T) {
 
 func TestFactoryRegistryDiscovery(t *testing.T) {
 	// The .jsonl registry carries the raw key/val bytes of every live
-	// PairAddressesNIndexed(u32) entry (209 at capture). Folding them must
+	// PairAddressesNIndexed(u32) entry (209 at capture). Applying them must
 	// register every pair for ownership without fabricating pool rows.
 	f, err := os.Open(filepath.Join("testdata", "pubnet-L063675481-soroswap-factory-pairindex-registry-fact.jsonl"))
 	if err != nil {
@@ -283,9 +283,9 @@ func TestFactoryRegistryDiscovery(t *testing.T) {
 		}
 	}
 	// Discovery registers ownership; pool rows materialize only when a pair's
-	// own instance folds.
+	// own instance is decoded.
 	if len(s.AMMPools) != 0 {
-		t.Fatalf("registry fold fabricated pools %#v", s.AMMPools)
+		t.Fatalf("registry decode fabricated pools %#v", s.AMMPools)
 	}
 }
 
