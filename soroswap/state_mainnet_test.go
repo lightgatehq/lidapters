@@ -228,7 +228,7 @@ func TestFactoryRegistryDiscovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read-only handle; nothing to flush
 	var changes []bindings.ContractDataChange
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {

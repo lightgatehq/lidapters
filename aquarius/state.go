@@ -89,7 +89,8 @@ func (a *Adapter) DecodeState(prior *bindings.LedgerState, changes []bindings.Co
 					case "reserveb", "reserve1":
 						upsertToken(&p.Tokens, 1, "", firstUint(entry.Val))
 					case "tickspacing":
-						fmt.Sscan(firstUint(entry.Val), &p.TickSpacing)
+						// A non-numeric value leaves TickSpacing unchanged; that is the fallback.
+						_, _ = fmt.Sscan(firstUint(entry.Val), &p.TickSpacing)
 					case "liquidity":
 						// Concentrated instance key: the pool's active
 						// (in-range) liquidity.
@@ -559,7 +560,8 @@ func decodePoolInstance(p *bindings.AMMPoolState, v xdr.ScVal) {
 		p.AmplificationRaw = firstUint(x)
 	}
 	if x := f["tick_spacing"]; x.Type != 0 {
-		fmt.Sscan(firstUint(x), &p.TickSpacing)
+		// A non-numeric value leaves TickSpacing unchanged; that is the fallback.
+		_, _ = fmt.Sscan(firstUint(x), &p.TickSpacing)
 	}
 	if x := f["pool_hash"]; x.Type != 0 {
 		if b, ok := x.GetBytes(); ok {
@@ -607,7 +609,8 @@ func upsertToken(tokens *[]bindings.AMMTokenReserve, idx int, assetID, reserve s
 func decodeSlot0(p *bindings.AMMPoolState, v xdr.ScVal) {
 	f := fields(v)
 	p.SqrtPriceX96 = firstUint(f["sqrt_price_x96"])
-	fmt.Sscan(firstUint(f["tick"]), &p.CurrentTick)
+	// A non-numeric value leaves CurrentTick unchanged; that is the fallback.
+	_, _ = fmt.Sscan(firstUint(f["tick"]), &p.CurrentTick)
 	if x := firstUint(f["active_liquidity"]); x != "" {
 		// The concentrated instance stores active liquidity under its own
 		// Liquidity key; only overwrite it when Slot0 actually carries one.
@@ -624,8 +627,9 @@ func decodePosition(pool string, key, val xdr.ScVal) (bindings.AMMPositionState,
 	p.LiquidityRaw = firstUint(f["liquidity"])
 	p.SqrtPriceLowerX96 = firstUint(f["sqrt_price_lower_x96"])
 	p.SqrtPriceUpperX96 = firstUint(f["sqrt_price_upper_x96"])
-	fmt.Sscan(firstUint(f["tick_lower"]), &p.TickLower)
-	fmt.Sscan(firstUint(f["tick_upper"]), &p.TickUpper)
+	// A non-numeric value leaves the tick unchanged; that is the fallback.
+	_, _ = fmt.Sscan(firstUint(f["tick_lower"]), &p.TickLower)
+	_, _ = fmt.Sscan(firstUint(f["tick_upper"]), &p.TickUpper)
 	p.PendingFee0Raw = firstUint(f["tokens_owed_0"])
 	p.PendingFee1Raw = firstUint(f["tokens_owed_1"])
 	if symbolOrFirst(key) == "Position" {
@@ -671,9 +675,10 @@ func assetMetadata(id string, key, val xdr.ScVal) (bindings.AMMAssetMetadata, bo
 	}
 	f := fields(val)
 	m := bindings.AMMAssetMetadata{ContractID: id, Name: symbolOrFirst(f["name"]), Symbol: symbolOrFirst(f["symbol"])}
-	fmt.Sscan(firstUint(f["decimal"]), &m.Decimals)
+	// A non-numeric value leaves Decimals unchanged; that is the fallback.
+	_, _ = fmt.Sscan(firstUint(f["decimal"]), &m.Decimals)
 	if m.Decimals == 0 {
-		fmt.Sscan(firstUint(f["decimals"]), &m.Decimals)
+		_, _ = fmt.Sscan(firstUint(f["decimals"]), &m.Decimals)
 	}
 	return m, m.Symbol != ""
 }
