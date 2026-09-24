@@ -1,7 +1,7 @@
-// Package bindings holds the protocol-agnostic seam between the relay's
-// projector edge and a protocol adapter: the ProtocolAdapter interface, the
+// Package bindings holds the protocol-agnostic seam between a host that reads
+// ledgers and a protocol adapter: the ProtocolAdapter interface, the
 // raw-input envelopes it consumes (RawEventEnvelope, ContractDataChange), the
-// gold output rows it emits (TransformOutput and friends), and the
+// output rows it emits (TransformOutput and friends), and the
 // config-persistence inversion-of-control types (config.go).
 //
 // One deliberate transitional coupling: LedgerState is the seam's state
@@ -43,7 +43,8 @@ type LedgerState struct {
 	// decoder can stay a stateless pure reducer: anything that must survive from
 	// one ledger to the next rides in this returned value rather than on the
 	// decoder, which is what keeps repeated runs byte-identical. See
-	// contracts.PendingUserPosition. Carried state only — never emitted to gold.
+	// contracts.PendingUserPosition. Carried state only — never emitted as an
+	// output row.
 	PendingUserPositions []contracts.PendingUserPosition
 	// Oracles carries each price oracle's decoded asset->index map, decimals and
 	// per-index raw prices across ledgers. The oracle's instance entry (which
@@ -52,16 +53,16 @@ type LedgerState struct {
 	// without carrying this, any ledger after the deploy would rebuild an empty
 	// oracle and reserves would lose their price (the index map would be empty
 	// and price-only ledgers would map nothing). It is the oracle analog of
-	// PendingUserPositions. Carried state only — never emitted to gold.
+	// PendingUserPositions. Carried state only — never emitted as an output row.
 	Oracles []contracts.OracleState
-	// PriceFeeds carries each registered Reflector price feed's decoded asset
-	// list and recent rounds, and OracleAggregators carries each Blend
+	// PriceFeeds carries each registered Reflector price feed's decoded asset list
+	// and recent rounds, and OracleAggregators carries each Blend
 	// oracle-aggregator's instance configuration. Mainnet pools name aggregator
-	// VIEW contracts as their oracle — contracts that never write prices; the
-	// real writes are the feeds' rounds, and the aggregator config is what maps
-	// a pool reserve onto them. Both are carried state only — never emitted to
-	// gold; each ledger the fold re-synthesizes the aggregator's prices from
-	// them into the same oracle representation the resolveOraclePrices path
+	// VIEW contracts as their oracle — contracts that never write prices; the real
+	// writes are the feeds' rounds, and the aggregator config is what maps a pool
+	// reserve onto them. Both are carried state only — never emitted as output
+	// rows; on each ledger the state decode re-synthesizes the aggregator's prices
+	// from them into the same oracle representation the resolveOraclePrices path
 	// already consumes.
 	PriceFeeds        []contracts.PriceFeedState
 	OracleAggregators []contracts.OracleAggregatorState
@@ -69,8 +70,8 @@ type LedgerState struct {
 	// identity (SAC AssetInfo or SEP-41 METADATA). Like the oracle instance, a
 	// token's identity entry is written once at deploy and never re-emitted, so
 	// without carrying this, any ledger after the deploy would lose the decoded
-	// symbol/name/decimals. Carried state only — never emitted to gold; it feeds
-	// Reserve.Metadata / Activity.AssetSymbol in the transform instead.
+	// symbol/name/decimals. Carried state only — never emitted as an output row;
+	// it feeds Reserve.Metadata / Activity.AssetSymbol in the transform instead.
 	Assets []contracts.AssetMetadata
 	// Auctions carries each live auction's decoded state (the pool's
 	// Auction(AuctionKey) temporary entries). An auction entry only appears in
@@ -121,8 +122,8 @@ type VaultState struct {
 	CollateralRaw string
 	DebtRaw       string
 	// HadVault is sticky lifecycle state, the vault analog of
-	// AMMPositionState.HadShares: true once the fold has observed the vault
-	// live. It distinguishes "vault that closed" (Closed && HadVault, which
+	// AMMPositionState.HadShares: true once the state decode has observed the
+	// vault live. It distinguishes "vault that closed" (Closed && HadVault, which
 	// deserves a terminal closed row) from "vault never seen live".
 	HadVault bool
 	// Closed marks a genuine on-chain deletion of the vault entry this ledger
@@ -213,11 +214,11 @@ type AMMPositionState struct {
 	PendingRewardRaw         string
 	WeightedLiquidityRaw     string
 	RewardCheckpointEligible bool
-	// HadShares is sticky lifecycle state: it flips true the first time the
-	// fold observes a nonzero share balance for this position and never flips
-	// back. It distinguishes "position that closed" (HadShares && shares==0,
-	// which deserves component tombstones) from "position that never existed"
-	// (shares==0 without HadShares, which must stay silent).
+	// HadShares is sticky lifecycle state: it flips true the first time the state
+	// decode observes a nonzero share balance for this position and never flips
+	// back. It distinguishes "position that closed" (HadShares && shares==0, which
+	// deserves component tombstones) from "position that never existed" (shares==0
+	// without HadShares, which must stay silent).
 	HadShares bool
 	// WorkingBalanceRaw is the pool's checkpointed reward weight for this user
 	// (the Aquarius WorkingBalance entry). It is NOT necessarily the raw share
@@ -231,12 +232,10 @@ type AMMPositionState struct {
 	RewardPoolAccumulatedRaw string
 }
 
-// ContractDataChange is the shared vocabulary between the relay's
-// protocol-agnostic projector edge (which extracts these from raw ledger meta)
-// and a protocol adapter's DecodeState (which folds them into typed state). It
-// is the contract_data delta for one ledger entry. The silver-only hash/JSON
-// debug fields the relay's prior struct carried are dropped here, since their
-// only consumer (a debug writer) is gone.
+// ContractDataChange is the shared vocabulary between the host (which
+// extracts these from raw ledger meta) and a protocol adapter's DecodeState
+// (which reduces them into typed state). It is the contract_data delta for
+// one ledger entry.
 type ContractDataChange struct {
 	ContractID string
 	KeyXDR     string  // base64 ScVal
@@ -245,8 +244,8 @@ type ContractDataChange struct {
 	ChangeType string // Created/Updated/Restored/Removed
 	Live       bool
 	// LiveUntilLedgerSeq is the TTL-liveness signal: the ledger up to which this
-	// entry is live. The relay extract populates it from the close-meta TtlEntry
-	// fold; DecodeState treats *LiveUntilLedgerSeq < ledgerSeq as expired. nil
+	// entry is live. The host populates it from the close meta's TtlEntry
+	// changes; DecodeState treats *LiveUntilLedgerSeq < ledgerSeq as expired. nil
 	// means no TTL signal was attached. On Soroban an entry's data and its TTL
 	// are separate ledger entries, so without carrying the TTL here expired state
 	// would read as live forever.
@@ -254,28 +253,28 @@ type ContractDataChange struct {
 	LastModifiedLedger uint32
 }
 
-// ProtocolAdapter is the seam the relay's protocol-agnostic projector consumes
-// and each protocol adapter implements. It folds the decode half into the older
+// ProtocolAdapter is the seam a protocol-agnostic host consumes and each
+// protocol adapter implements. It merges the decode half into the older
 // ID/Protocol/Transform interface so a protocol is fully self-contained: event
 // decode, state decode, and transform all live in the adapter rather than being
-// split between the adapter and the relay core.
+// split between the adapter and the host.
 type ProtocolAdapter interface {
 	ID() string
 	Protocol() string
 
 	// OwnsContract reports whether a contract_data change / event for contractID
-	// belongs to this protocol. It subsumes the relay router contract-match +
-	// protocol classification, which happens consumer-side, inside the adapter.
+	// belongs to this protocol. Contract matching and protocol classification
+	// therefore happen inside the adapter rather than in the host.
 	OwnsContract(contractID string) bool
 
-	// DecodeState folds this protocol's contract_data changes into typed state.
+	// DecodeState reduces this protocol's contract_data changes into typed state.
 	//
 	// Decode is adapter-owned: keeping protocol decode in the adapter (rather
-	// than in the relay core) is what makes each protocol self-contained — event
+	// than in the host) is what makes each protocol self-contained — event
 	// decode, state decode, and transform in one place.
 	//
 	// It is a PURE reducer — (prior, changes, ledgerSeq) -> next, with no
-	// DB/network/clock/random: folding the same input twice yields
+	// DB/network/clock/random: decoding the same input twice yields
 	// byte-identical output, and all carry-over threads through *LedgerState
 	// (PendingUserPositions carries the one piece of raw scratch that does not
 	// otherwise round-trip).
@@ -285,21 +284,22 @@ type ProtocolAdapter interface {
 	// the functional contract is preserved: the carried mirror is only trusted
 	// when prior IS the adapter's own previous return value, any other prior
 	// reseeds from it, and the returned state is treated by both sides as
-	// immutable. Such an adapter is not shareable across concurrent folds; the
+	// immutable. Such an adapter is not shareable across concurrent decodes; the
 	// default blend mode (paranoid) remains fully stateless.
 	DecodeState(prior *LedgerState, changes []ContractDataChange, ledgerSeq int64) (*LedgerState, error)
 
-	// Transform folds events + typed state into gold. Pure; unchanged by the fold.
+	// Transform turns events + typed state into output rows. Pure; it does not
+	// modify the state.
 	Transform(input TransformInput) (*TransformOutput, error)
 }
 
 // DirtyKind classifies one entry of a per-ledger dirty-positions set: whether
-// the (address, pool) pair still has positions after the fold (Upsert) or its
-// Positions entry was explicitly removed on-chain this ledger (Removal). A
-// TTL lapse or network eviction is reported as Upsert, not Removal — Change 1
-// (see blend/state.go's applyDelete) archives rather than deletes those, so
-// the entry still has positions (flagged Archived); only a real
-// LedgerEntryRemoved change is a Removal.
+// the (address, pool) pair still has positions after the decode (Upsert) or its
+// Positions entry was explicitly removed on-chain this ledger (Removal). A TTL
+// lapse or network eviction is reported as Upsert, not Removal — the adapter
+// (see blend/state.go's applyDelete) archives rather than deletes those, so the
+// entry still has positions (flagged Archived); only a real LedgerEntryRemoved
+// change is a Removal.
 type DirtyKind string
 
 const (
@@ -308,7 +308,7 @@ const (
 )
 
 // DirtyPosition is one (address, pool) pair whose position changed on the
-// ledger just folded, plus the kind of change. See DirtyPositionsProvider.
+// ledger just decoded, plus the kind of change. See DirtyPositionsProvider.
 type DirtyPosition struct {
 	Address        string
 	PoolContractID string
@@ -327,26 +327,26 @@ type DirtyPosition struct {
 //
 // LastDirtyPositions reflects the most recent DecodeState/DecodeStateAt call
 // on that adapter instance and is overwritten by the next one — same
-// single-fold-at-a-time contract as the incremental state mode (see
+// one-decode-at-a-time contract as the incremental state mode (see
 // ProtocolAdapter.DecodeState's doc on carried mirrors): do not share one
-// adapter across concurrent folds and read this immediately after folding,
+// adapter across concurrent decodes and read this immediately after decoding,
 // before the next ledger.
 type DirtyPositionsProvider interface {
 	LastDirtyPositions() []DirtyPosition
 }
 
 // Required DecodeDiagnostic reason codes. An unmapped index has no configured
-// reserve behind it (the cold-start/bounded-replay case: the reserve's
-// ResConfig never folded, so its true index is unknown); a duplicate index has
-// two or more configured reserves claiming it, so resolving either way would
-// misattribute.
+// reserve behind it (the case where decoding started after the reserve was
+// configured: its ResConfig was never observed, so its true index is unknown);
+// a duplicate index has two or more configured reserves claiming it, so
+// resolving either way would misattribute.
 const (
 	DecodeDiagnosticUnmappedReserveIndex  = "unmapped_reserve_index"
 	DecodeDiagnosticDuplicateReserveIndex = "duplicate_reserve_index"
 )
 
 // DirtyBackstop is one (address, pool) backstop position whose valuation
-// inputs changed on the ledger just folded: the holder's own UserBalance or
+// inputs changed on the ledger just decoded: the holder's own UserBalance or
 // its sibling UEmisData, the pool's PoolBalance (every holder's shares<->LP
 // conversion moves), a Comet LP reserve/supply write on the pool's BToken
 // contract, or a price change for the backstop's BLND/USDC legs. It is the
@@ -364,22 +364,22 @@ type DirtyBackstop struct {
 // DirtyBackstopsProvider is an additive capability an adapter MAY implement
 // alongside ProtocolAdapter: after a DecodeState/DecodeStateAt call, it
 // reports exactly which (address, pool) backstop pairs that ledger's changes
-// invalidated, sorted by (address, pool). Same single-fold-at-a-time contract
-// as DirtyPositionsProvider: the set reflects the most recent fold, is
-// overwritten by the next one, and must be read immediately after folding,
+// invalidated, sorted by (address, pool). Same one-decode-at-a-time contract
+// as DirtyPositionsProvider: the set reflects the most recent decode, is
+// overwritten by the next one, and must be read immediately after decoding,
 // before the next ledger.
 type DirtyBackstopsProvider interface {
 	LastDirtyBackstops() []DirtyBackstop
 }
 
-// DecodeDiagnostic is one non-zero position leg the fold skipped because its
-// reserve index could not be resolved to exactly one configured reserve.
-// Skipping is financially safer than guessing (a wrong-but-plausible row is
-// strictly worse than a missing-and-counted one in a position store downstream
-// health-factor math consumes), but a silent skip is not acceptable: each
-// record names the ledger, pool, user, position type, raw reserve index, raw
-// amount, and the sorted candidate assets — the unknown-index reserves for an
-// unmapped index, the claiming reserves for a duplicate.
+// DecodeDiagnostic is one non-zero position leg the state decode skipped
+// because its reserve index could not be resolved to exactly one configured
+// reserve. Skipping is financially safer than guessing (a wrong-but-plausible
+// row is strictly worse than a missing-and-counted one in a position store
+// downstream health-factor math consumes), but a silent skip is not acceptable:
+// each record names the ledger, pool, user, position type, raw reserve index,
+// raw amount, and the sorted candidate assets — the unknown-index reserves for
+// an unmapped index, the claiming reserves for a duplicate.
 type DecodeDiagnostic struct {
 	Code              string
 	LedgerSeq         int64
@@ -393,20 +393,20 @@ type DecodeDiagnostic struct {
 
 // DecodeDiagnosticsProvider is an additive capability an adapter MAY implement
 // alongside ProtocolAdapter: after a DecodeState/DecodeStateAt call, it
-// reports the position legs that fold skipped as unresolvable, sorted by
+// reports the position legs that decode skipped as unresolvable, sorted by
 // (code, pool, address, position type, reserve index, amount, candidates).
-// Same single-fold-at-a-time contract as DirtyPositionsProvider: the set
-// reflects the most recent fold, is overwritten by the next one, and must be
-// read immediately after folding, before the next ledger.
+// Same one-decode-at-a-time contract as DirtyPositionsProvider: the set
+// reflects the most recent decode, is overwritten by the next one, and must be
+// read immediately after decoding, before the next ledger.
 type DecodeDiagnosticsProvider interface {
 	LastDecodeDiagnostics() []DecodeDiagnostic
 }
 
 // TemporaryStateKind names the temporary-storage entity families whose
-// per-ledger transitions the fold exposes (see TemporaryStateChange): pool
-// auctions (Auction(AuctionKey) entries) and queued reserves (ResInit
-// entries). Both are temporary storage on-chain: the entry only appears in
-// the ledger it changes, and any not-live change removes it.
+// per-ledger transitions the state decode exposes (see TemporaryStateChange):
+// pool auctions (Auction(AuctionKey) entries) and queued reserves (ResInit
+// entries). Both are temporary storage on-chain: the entry only appears in the
+// ledger it changes, and any not-live change removes it.
 type TemporaryStateKind string
 
 const (
@@ -415,10 +415,10 @@ const (
 )
 
 // TemporaryStateChange is one auction or queued-reserve identity whose
-// on-chain entry the ledger just folded created/updated (DirtyUpsert) or
+// on-chain entry the ledger just decoded created/updated (DirtyUpsert) or
 // removed (DirtyRemoval). The identity comes from the changed ledger key, so
-// a removal is reportable even when the replay never observed the entry's
-// create (the bounded-replay case) — no comparison of complete previous and
+// a removal is reportable even when decoding never observed the entry's
+// create (decoding started after it) — no comparison of complete previous and
 // current state slices is involved. For auctions the identity is
 // (PoolContractID, UserAddress, AuctionType); for queued reserves it is
 // (PoolContractID, AssetID). The fields of the other kind are zero.
@@ -435,19 +435,19 @@ type TemporaryStateChange struct {
 // implement alongside ProtocolAdapter: after a DecodeState/DecodeStateAt
 // call, it reports exactly which auction/queued-reserve identities that
 // ledger's changes touched, sorted by (kind, pool, user, auction type,
-// asset). Same single-fold-at-a-time contract as DirtyPositionsProvider: the
-// set reflects the most recent fold, is overwritten by the next one, and must
-// be read immediately after folding, before the next ledger.
+// asset). Same one-decode-at-a-time contract as DirtyPositionsProvider: the
+// set reflects the most recent decode, is overwritten by the next one, and must
+// be read immediately after decoding, before the next ledger.
 type TemporaryStateChangesProvider interface {
 	LastTemporaryStateChanges() []TemporaryStateChange
 }
 
-// AuctionLifecycle is one per-ledger auction transition surfaced to gold:
-// Active=true carries the live auction verbatim (create, update, or restore
-// observed); Active=false carries stable identity only (the entry went
-// not-live — filled, deleted, or TTL-lapsed; the adapter cannot distinguish
-// the business outcome from a lone removed storage entry, so it does not
-// invent one). Additive beside the established full-state Auctions slice.
+// AuctionLifecycle is one per-ledger auction transition emitted as an output
+// row: Active=true carries the live auction verbatim (create, update, or
+// restore observed); Active=false carries stable identity only (the entry went
+// not-live — filled, deleted, or TTL-lapsed; the adapter cannot distinguish the
+// business outcome from a lone removed storage entry, so it does not invent
+// one). Additive beside the established full-state Auctions slice.
 type AuctionLifecycle struct {
 	Auction
 	Active bool
@@ -465,14 +465,14 @@ type QueuedReserveLifecycle struct {
 
 // CloseTimeStateDecoder is the close-time-aware variant of DecodeState. The
 // ledger close time comes from the same close-meta the changes were extracted
-// from — it is fold INPUT, not a clock read, so purity holds: (prior, changes,
-// ledgerSeq, closeTime) -> next is still a deterministic function of bronze.
-// An adapter implements it when some decode semantics depend on ledger time —
-// the Blend oracle-aggregators' MaxAge staleness window is the motivating case
-// (a price older than MaxAge at the folding ledger's close must resolve to
-// nothing, exactly as the aggregator's own lastprice would). Hosts that have
-// the close time (the relay projector decodes it from the raw meta anyway)
-// prefer this over DecodeState when the adapter provides it.
+// from — it is decode INPUT, not a clock read, so purity holds: (prior,
+// changes, ledgerSeq, closeTime) -> next is still a deterministic function of
+// the ledger history. An adapter implements it when some decode semantics
+// depend on ledger time — the Blend oracle-aggregators' MaxAge staleness window
+// is the motivating case (a price older than MaxAge at the decoded ledger's
+// close must resolve to nothing, exactly as the aggregator's own lastprice
+// would). Hosts that have the close time (it is in the raw ledger meta they
+// already read) prefer this over DecodeState when the adapter provides it.
 type CloseTimeStateDecoder interface {
 	DecodeStateAt(prior *LedgerState, changes []ContractDataChange, ledgerSeq int64, closeTime time.Time) (*LedgerState, error)
 }
@@ -482,20 +482,20 @@ type TransformInput struct {
 	CloseTime time.Time
 	Events    []RawEventEnvelope
 	State     *LedgerState
-	// PriorPositions carries the previous ledger's gold Position output,
+	// PriorPositions carries the previous ledger's Position output rows,
 	// enabling the adapter to diff and emit tombstones for legs that
 	// disappeared (went to zero or were evicted). May be nil on the first
-	// ledger or when the relay does not support tombstone emission.
+	// ledger or when the caller does not support tombstone emission.
 	PriorPositions []Position
-	// PriorSummaries carries the previous ledger's gold PositionSummary
-	// output for the same diff-and-tombstone purpose. May be nil.
+	// PriorSummaries carries the previous ledger's PositionSummary output rows
+	// for the same diff-and-tombstone purpose. May be nil.
 	PriorSummaries []PositionSummary
 }
 
 // PositionTombstone marks a position leg that should be marked as deleted
-// in Gold at this ledger. The relay inserts a tombstone row with
-// is_deleted=TRUE at LedgerSeq so the current-view (filtered by NOT
-// is_deleted) no longer shows the phantom last nonzero value.
+// at this ledger. A consumer storing position rows records it as a
+// tombstone row with is_deleted=TRUE at LedgerSeq so a current view
+// (filtered by NOT is_deleted) no longer shows the phantom last nonzero value.
 type PositionTombstone struct {
 	Address      string
 	Protocol     string
@@ -506,7 +506,7 @@ type PositionTombstone struct {
 }
 
 // SummaryTombstone marks a per-account summary that should be marked as
-// deleted in Gold at this ledger. Emitted only when the address has no
+// deleted at this ledger. Emitted only when the address has no
 // remaining Blend reserve or backstop positions of any kind.
 type SummaryTombstone struct {
 	Address   string
@@ -644,12 +644,12 @@ type ReserveEmission struct {
 	Metadata    map[string]string
 }
 
-// Auction is one live auction surfaced to gold: structured liquidation /
-// bad-debt / interest auction state, previously visible only as a coarse
+// Auction is one live auction emitted as an output row: structured liquidation
+// / bad-debt / interest auction state, previously visible only as a coarse
 // activity. AuctionType is the label form of the contract's enum
 // (user_liquidation | bad_debt | interest). Lot and Bid carry the full
-// per-asset maps; their unit depends on the auction type (a user
-// liquidation's lot is bTokens, bid is dTokens).
+// per-asset maps; their unit depends on the auction type (a user liquidation's
+// lot is bTokens, bid is dTokens).
 type Auction struct {
 	ID          string
 	Protocol    string
@@ -670,10 +670,10 @@ type AuctionAmount struct {
 	AmountRaw string
 }
 
-// QueuedReserve is one pending, time-locked reserve-parameter change
-// surfaced to gold: the pool's ResInit entry — a "params about to change"
-// signal. NewConfig carries the queued ReserveConfig fields verbatim as raw
-// strings, only the ones present on-chain.
+// QueuedReserve is one pending, time-locked reserve-parameter change emitted as
+// an output row: the pool's ResInit entry — a "params about to change" signal.
+// NewConfig carries the queued ReserveConfig fields verbatim as raw strings,
+// only the ones present on-chain.
 type QueuedReserve struct {
 	ID            string
 	Protocol      string
@@ -687,8 +687,8 @@ type QueuedReserve struct {
 	Metadata      map[string]string
 }
 
-// UserEmission is one user's per-reserve-token emission accrual surfaced to
-// gold: the checkpointed unclaimed BLND (AccruedRaw) plus the user's last
+// UserEmission is one user's per-reserve-token emission accrual emitted as an
+// output row: the checkpointed unclaimed BLND (AccruedRaw) plus the user's last
 // accrued index (IndexRaw, 14 decimals) for one reserve side. AssetID and
 // Side are resolved from the pool's reserve list when known; AssetID is ""
 // when the reserve index cannot be resolved yet (the raw ReserveTokenID is
@@ -762,7 +762,7 @@ type TransformOutput struct {
 	SummaryTombstones      []SummaryTombstone
 }
 
-// Vault is one vault snapshot row for gold: the (address, denomination) pair
+// Vault is one vault snapshot output row: the (address, denomination) pair
 // on one vaults contract, with the raw on-chain amounts. Status is 'active'
 // (entry live or archived-but-owned on-chain) or 'closed' (the entry was
 // genuinely deleted this ledger or earlier) — the closed row IS the vault's
@@ -848,14 +848,14 @@ type AMMReward struct {
 	Metadata        map[string]string
 }
 
-// StateStats lets the relay report health without inspecting protocol-specific
+// StateStats lets a host report health without inspecting protocol-specific
 // state slices.
 type StateStats struct{ Pools, Users, Backstops int }
 
 type StateReporter interface{ StateStats(*LedgerState) StateStats }
 
-// AssetRegistrar lets the relay register token contracts discovered in prior
-// folded state without knowing a protocol's state layout.
+// AssetRegistrar lets a host register token contracts discovered in prior
+// decoded state without knowing a protocol's state layout.
 type AssetRegistrar interface {
 	RegisterAssetContracts(ids ...string)
 	StateAssetContracts(*LedgerState) []string

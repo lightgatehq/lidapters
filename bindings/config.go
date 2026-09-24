@@ -3,21 +3,21 @@ package bindings
 // ConfigRecord is an opaque, adapter-owned unit of low-frequency configuration
 // that a storage host persists verbatim and returns unchanged on cold start.
 //
-// This is the inversion-of-control seam between an adapter (the authority on its
-// own state) and the relay (a generic storage host). The host treats Kind and
-// EntityKey as opaque namespacing strings and Payload as opaque bytes: it never
-// decodes Payload and never interprets what a record means. The adapter serializes
-// its own config struct into Payload as canonical JSON — it owns the shape. The
+// This is the inversion-of-control seam between an adapter (the authority on
+// its own state) and a generic storage host. The host treats Kind and EntityKey
+// as opaque namespacing strings and Payload as opaque bytes: it never decodes
+// Payload and never interprets what a record means. The adapter serializes its
+// own config struct into Payload as canonical JSON — it owns the shape. The
 // host stores records append-on-change keyed by (Kind, EntityKey, Ledger),
-// tombstones via Removed, and hands the latest-per-entity set back to the adapter's
-// HydrateConfig on restart.
+// tombstones via Removed, and hands the latest-per-entity set back to the
+// adapter's HydrateConfig on restart.
 //
 // Persist only LOW-FREQUENCY config (written on a config-key change, not every
 // ledger): an oracle's asset->index map + decimals (NOT its prices), a pool's
-// oracle/backstop/status/take-rate (NOT its reserves' economic data), a reserve's
-// rate-curve/factor/cap config (NOT its b/d rate accumulators or supplies). The
-// high-frequency data half is deliberately not persisted; it re-folds naturally
-// from bronze after a restart.
+// oracle/backstop/status/take-rate (NOT its reserves' economic data), a
+// reserve's rate-curve/factor/cap config (NOT its b/d rate accumulators or
+// supplies). The high-frequency data half is deliberately not persisted; it is
+// rebuilt naturally from the ledger history after a restart.
 type ConfigRecord struct {
 	// Kind is the adapter-namespaced config kind, e.g. "blend.oracle". It scopes a
 	// record to one shape the adapter knows how to (de)serialize.
@@ -38,11 +38,11 @@ type ConfigRecord struct {
 	Removed bool
 }
 
-// ConfigTableSchema is one config kind's storage declaration: the physical table
-// the host stores the kind's records in, plus the analytics surface derived from
-// the jsonb payload. It is how the adapter keeps ALL kind-specific knowledge
-// (table name, decimal scaling, which fields are query-hot) on its own side while
-// the host stays a generic storage engine that imports no adapter types.
+// ConfigTableSchema is one config kind's storage declaration: the physical
+// table the host stores the kind's records in, plus the analytics surface
+// derived from the jsonb payload. It is how the adapter keeps ALL kind-specific
+// knowledge (table name, decimal scaling, which fields are query-hot) on its
+// own side while the host stays a generic store that imports no adapter types.
 //
 // The host's write path is generic and identical for every kind: it INSERTs only
 // (entity_key, ledger, payload, removed). The Generated columns populate
@@ -101,8 +101,8 @@ type ConfigIndex struct {
 // cross-restart config need not implement it.
 //
 // All methods are PURE (no DB/network/clock/random) so they preserve the
-// run-twice determinism of the fold: the adapter DECLARES config (schema +
-// records) and the host PERSISTS it — the reducer itself does no I/O.
+// run-twice determinism of the state decode: the adapter DECLARES config
+// (schema + records) and the host PERSISTS it — the reducer itself does no I/O.
 type ConfigStateful interface {
 	// ConfigSchema declares one table per kind: the physical table plus the
 	// generated-column analytics surface. The host derives the kinds it loads on
@@ -110,17 +110,18 @@ type ConfigStateful interface {
 	// declaration — it never hard-codes a kind's shape.
 	ConfigSchema() []ConfigTableSchema
 
-	// ConfigRecords derives this ledger's config changes as opaque records from the
-	// owned contract-data changes and the freshly folded next state. It is
+	// ConfigRecords derives this ledger's config changes as opaque records from
+	// the owned contract-data changes and the freshly decoded next state. It is
 	// emit-on-change: a record is produced only for an entity whose config key
-	// appeared in this ledger's meta (an upsert carrying the entity's current config
-	// payload) or was removed (a tombstone). It is a pure function of its inputs.
+	// appeared in this ledger's meta (an upsert carrying the entity's current
+	// config payload) or was removed (a tombstone). It is a pure function of its
+	// inputs.
 	ConfigRecords(next *LedgerState, ownedChanges []ContractDataChange, ledgerSeq int64) []ConfigRecord
 
 	// HydrateConfig reconstructs the seed LedgerState from previously persisted
-	// records, which the host has already reduced to the latest record per
-	// (Kind, EntityKey) with tombstoned entities excluded. The result is passed as
-	// priorState to the first live fold after a restart, so a restart resumes with
-	// its config (oracle map, pool/reserve config) already in place. Pure.
+	// records, which the host has already reduced to the latest record per (Kind,
+	// EntityKey) with tombstoned entities excluded. The result is passed as
+	// priorState to the first live decode after a restart, so a restart resumes
+	// with its config (oracle map, pool/reserve config) already in place. Pure.
 	HydrateConfig(records []ConfigRecord) (*LedgerState, error)
 }
