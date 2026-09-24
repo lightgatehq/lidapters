@@ -40,7 +40,7 @@ func reservePrice(t *testing.T, state *bindings.LedgerState, l oracleLayout, cod
 // at deploy, and a price entry only appears in the ledger it changes. Before the
 // fix the index map was rebuilt empty on every ledger after the deploy, so a
 // price-only ledger mapped nothing — repriced assets were dropped (stale) and the
-// rest surfaced empty. This folds three ledgers where the instance is seen ONLY
+// rest surfaced empty. This applies three ledgers where the instance is seen ONLY
 // at the deploy ledger (the "floor after deploy / instance never re-seen" case)
 // and asserts each price-only ledger still resolves: the repriced asset takes its
 // new price and the silent assets carry their last price forward.
@@ -106,7 +106,7 @@ func TestDecodeState_OraclePriceCarriesAcrossPriceOnlyLedgers(t *testing.T) {
 		}
 	}
 
-	// The carried oracle state must not leak map-iteration order: folding the same
+	// The carried oracle state must not leak map-iteration order: decoding the same
 	// price-only ledger twice off the same prior is byte-identical.
 	again, err := adapter.DecodeState(priorN, []bindings.ContractDataChange{
 		oraclePriceOnlyChange(t, layout, "wBTC", newWBTC),
@@ -117,7 +117,7 @@ func TestDecodeState_OraclePriceCarriesAcrossPriceOnlyLedgers(t *testing.T) {
 	b1, _ := json.Marshal(stateN1)
 	b2, _ := json.Marshal(again)
 	if !bytes.Equal(b1, b2) {
-		t.Fatalf("price-only fold not byte-identical across two runs")
+		t.Fatalf("price-only decode not byte-identical across two runs")
 	}
 }
 

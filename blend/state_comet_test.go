@@ -11,7 +11,7 @@ import (
 	"github.com/stellar/go-stellar-sdk/xdr"
 )
 
-// Comet (BToken) fold tests: the pinned persistent-entry layout
+// Comet (BToken) decode tests: the pinned persistent-entry layout
 // (CometDEX/comet-contracts-v1 @ ef4cbfad — AllTokenVec Vec<Address>,
 // AllRecordData Map<Address, Record{balance,weight,scalar,index}>, TotalShares
 // i128), the backstop valuation join by exact token ID, and the
@@ -63,7 +63,7 @@ func cometRecordVal(t *testing.T, balance int64, index uint32) xdr.ScVal {
 	})
 }
 
-// cometRecordMapVal builds AllRecordData in the given entry order — the fold
+// cometRecordMapVal builds AllRecordData in the given entry order — the decoder
 // must be indifferent to it.
 func cometRecordMapVal(t *testing.T, entries ...xdr.ScMapEntry) xdr.ScVal {
 	t.Helper()
@@ -72,7 +72,7 @@ func cometRecordMapVal(t *testing.T, entries ...xdr.ScMapEntry) xdr.ScVal {
 	return xdr.ScVal{Type: xdr.ScValTypeScvMap, Map: &ptr}
 }
 
-// cometDeployChanges folds the full pinned state at one ledger: pool with both
+// cometDeployChanges applies the full pinned state at one ledger: pool with both
 // token reserves, oracle with both prices, backstop instance, pool/user
 // balances, and the three Comet entries.
 func (f cometFixture) deployChanges(t *testing.T) []bindings.ContractDataChange {
@@ -163,7 +163,7 @@ func foldCometDeploy(t *testing.T, adapter *Adapter, f cometFixture) *bindings.L
 	t.Helper()
 	state, err := adapter.DecodeState(nil, f.deployChanges(t), 100)
 	if err != nil {
-		t.Fatalf("fold deploy ledger: %v", err)
+		t.Fatalf("decode deploy ledger: %v", err)
 	}
 	return state
 }
@@ -233,7 +233,7 @@ func TestCometFold_PinnedKeysDecode(t *testing.T) {
 	if position.LPUSDCReserveRaw != "4000000000000" {
 		t.Fatalf("expected USDC reserve, got %q", position.LPUSDCReserveRaw)
 	}
-	// Price bindings from the folded pool reserves: 0.05 and 0.9999999 at 14dp.
+	// Price bindings from the decoded pool reserves: 0.05 and 0.9999999 at 14dp.
 	if position.BLNDPriceUSD != "0.05" {
 		t.Fatalf("expected BLND price 0.05, got %q", position.BLNDPriceUSD)
 	}
@@ -267,12 +267,12 @@ func TestCometFold_RejectsWrongLayout(t *testing.T) {
 	}
 	next, err := adapter.DecodeState(state, bad, 101)
 	if err != nil {
-		t.Fatalf("fold bad-layout ledger: %v", err)
+		t.Fatalf("decode bad-layout ledger: %v", err)
 	}
 	before, _ := json.Marshal(state.AMMPools)
 	after, _ := json.Marshal(next.AMMPools)
 	if !bytes.Equal(before, after) {
-		t.Fatalf("malformed Comet writes changed folded state:\nbefore=%s\nafter=%s", before, after)
+		t.Fatalf("malformed Comet writes changed decoded state:\nbefore=%s\nafter=%s", before, after)
 	}
 }
 
@@ -303,7 +303,7 @@ func TestCometFold_TokenOrderIrrelevant(t *testing.T) {
 		)
 		state, err := adapter.DecodeState(nil, filtered, 100)
 		if err != nil {
-			t.Fatalf("fold: %v", err)
+			t.Fatalf("decode: %v", err)
 		}
 		return state
 	}
@@ -332,12 +332,12 @@ func TestCometFold_TTLExpiryGoesAbsent(t *testing.T) {
 	f.register(adapter)
 	state := foldCometDeploy(t, adapter, f)
 
-	expired := uint32(100) // LiveUntilLedgerSeq < folding ledger 101
+	expired := uint32(100) // LiveUntilLedgerSeq < decoding ledger 101
 	next, err := adapter.DecodeState(state, []bindings.ContractDataChange{
 		stateChange(t, f.cometID, variantVal(t, "TotalShares"), i128Val(100_000_000_000), withLiveUntil(&expired)),
 	}, 101)
 	if err != nil {
-		t.Fatalf("fold ttl ledger: %v", err)
+		t.Fatalf("decode ttl ledger: %v", err)
 	}
 	position := backstopFor(t, next, f.userA, f.poolID)
 	if position.LPTokenSupplyRaw != "" {
@@ -372,7 +372,7 @@ func TestCometFold_ZeroSupplyPresentButUnvalued(t *testing.T) {
 	filtered = append(filtered, stateChange(t, f.cometID, variantVal(t, "TotalShares"), i128Val(0)))
 	state, err := adapter.DecodeState(nil, filtered, 100)
 	if err != nil {
-		t.Fatalf("fold: %v", err)
+		t.Fatalf("decode: %v", err)
 	}
 
 	position := backstopFor(t, state, f.userA, f.poolID)
@@ -429,11 +429,11 @@ func TestCometFold_MissingLegsStayAbsent(t *testing.T) {
 		)))
 		state, err := adapter.DecodeState(nil, filtered, 100)
 		if err != nil {
-			t.Fatalf("fold: %v", err)
+			t.Fatalf("decode: %v", err)
 		}
 		position := backstopFor(t, state, f.userA, f.poolID)
 		if position.LPBLNDReserveRaw != "80000000000000" {
-			t.Fatalf("BLND leg must fold, got %q", position.LPBLNDReserveRaw)
+			t.Fatalf("BLND leg must decode, got %q", position.LPBLNDReserveRaw)
 		}
 		if position.LPUSDCReserveRaw != "" {
 			t.Fatalf("missing USDC record must stay absent, got %q", position.LPUSDCReserveRaw)
@@ -459,7 +459,7 @@ func TestCometFold_MissingLegsStayAbsent(t *testing.T) {
 		}
 		state, err := adapter.DecodeState(nil, filtered, 100)
 		if err != nil {
-			t.Fatalf("fold: %v", err)
+			t.Fatalf("decode: %v", err)
 		}
 		position := backstopFor(t, state, f.userA, f.poolID)
 		if position.BLNDPriceUSD != "0.05" {
@@ -473,10 +473,10 @@ func TestCometFold_MissingLegsStayAbsent(t *testing.T) {
 	t.Run("no_comet_registered", func(t *testing.T) {
 		adapter := newTestAdapter(t)
 		adapter.RegisterContracts(f.poolID, f.backstopID, f.oracleID)
-		// The Comet contract is NOT registered: its writes never fold.
+		// The Comet contract is NOT registered: its writes never apply.
 		state, err := adapter.DecodeState(nil, f.deployChanges(t), 100)
 		if err != nil {
-			t.Fatalf("fold: %v", err)
+			t.Fatalf("decode: %v", err)
 		}
 		position := backstopFor(t, state, f.userA, f.poolID)
 		if position.LPTokenSupplyRaw != "" || position.LPBLNDReserveRaw != "" || position.LPUSDCReserveRaw != "" {
@@ -513,7 +513,7 @@ func TestCometDirtyBackstops(t *testing.T) {
 			})), mapVal(t, map[string]xdr.ScVal{"shares": i128Val(6_000_000_000)})),
 		}, 101)
 		if err != nil {
-			t.Fatalf("fold: %v", err)
+			t.Fatalf("decode: %v", err)
 		}
 		dirty := adapter.LastDirtyBackstops()
 		if len(dirty) != 1 || dirty[0].Address != f.userA || dirty[0].PoolContractID != f.poolID || dirty[0].Kind != bindings.DirtyUpsert {
@@ -533,7 +533,7 @@ func TestCometDirtyBackstops(t *testing.T) {
 			})),
 		}, 101)
 		if err != nil {
-			t.Fatalf("fold: %v", err)
+			t.Fatalf("decode: %v", err)
 		}
 		if dirty := adapter.LastDirtyBackstops(); len(dirty) != 2 {
 			t.Fatalf("PoolBalance must dirty both holders, got %+v", dirty)
@@ -546,7 +546,7 @@ func TestCometDirtyBackstops(t *testing.T) {
 			stateChange(t, f.cometID, variantVal(t, "TotalShares"), i128Val(101_000_000_000)),
 		}, 101)
 		if err != nil {
-			t.Fatalf("fold: %v", err)
+			t.Fatalf("decode: %v", err)
 		}
 		if dirty := adapter.LastDirtyBackstops(); len(dirty) != 2 {
 			t.Fatalf("a linked Comet write must dirty both holders, got %+v", dirty)
@@ -564,7 +564,7 @@ func TestCometDirtyBackstops(t *testing.T) {
 			stateChange(t, other, variantVal(t, "TotalShares"), i128Val(1)),
 		}, 101)
 		if err != nil {
-			t.Fatalf("fold: %v", err)
+			t.Fatalf("decode: %v", err)
 		}
 		if dirty := adapter.LastDirtyBackstops(); len(dirty) != 0 {
 			t.Fatalf("an unlinked Comet write must dirty nothing, got %+v", dirty)
@@ -577,7 +577,7 @@ func TestCometDirtyBackstops(t *testing.T) {
 			stateChange(t, f.oracleID, u128Val(0), u128Val(600_000_000_000)),
 		}, 101)
 		if err != nil {
-			t.Fatalf("fold: %v", err)
+			t.Fatalf("decode: %v", err)
 		}
 		if dirty := adapter.LastDirtyBackstops(); len(dirty) != 2 {
 			t.Fatalf("a BLND price tick must dirty both holders, got %+v", dirty)
@@ -595,7 +595,7 @@ func TestCometDirtyBackstops(t *testing.T) {
 			})),
 		}, 101)
 		if err != nil {
-			t.Fatalf("fold: %v", err)
+			t.Fatalf("decode: %v", err)
 		}
 		if dirty := adapter.LastDirtyBackstops(); len(dirty) != 0 {
 			t.Fatalf("a lending Positions write must not dirty backstops, got %+v", dirty)
@@ -614,7 +614,7 @@ func TestCometDirtyBackstops(t *testing.T) {
 			})), mapVal(t, map[string]xdr.ScVal{}), withNoValue(), withChangeType("LedgerEntryRemoved")),
 		}, 101)
 		if err != nil {
-			t.Fatalf("fold: %v", err)
+			t.Fatalf("decode: %v", err)
 		}
 		dirty := adapter.LastDirtyBackstops()
 		if len(dirty) != 1 || dirty[0].Kind != bindings.DirtyRemoval {
@@ -625,7 +625,7 @@ func TestCometDirtyBackstops(t *testing.T) {
 
 // TestCometCheckpoint_RestartMatchesReplay is the restart gate: restore the
 // checkpoint JSON at ledger N, apply a wallet-only write at N+1 with no Comet
-// write, and match uninterrupted replay byte for byte — AMMPools, Backstops,
+// write, and match an uninterrupted run byte for byte — AMMPools, Backstops,
 // and the wallet's valuation.
 func TestCometCheckpoint_RestartMatchesReplay(t *testing.T) {
 	t.Parallel()
@@ -646,7 +646,7 @@ func TestCometCheckpoint_RestartMatchesReplay(t *testing.T) {
 	deployed := foldCometDeploy(t, uninterrupted, f)
 	finalReplay, err := uninterrupted.DecodeState(deployed, walletOnly(t), 101)
 	if err != nil {
-		t.Fatalf("replay fold 101: %v", err)
+		t.Fatalf("uninterrupted decode 101: %v", err)
 	}
 
 	// Restart: checkpoint JSON at 100 restored into a fresh adapter, same 101.
@@ -662,13 +662,13 @@ func TestCometCheckpoint_RestartMatchesReplay(t *testing.T) {
 	f.register(restarted)
 	finalRestart, err := restarted.DecodeState(&restored, walletOnly(t), 101)
 	if err != nil {
-		t.Fatalf("restart fold 101: %v", err)
+		t.Fatalf("restart decode 101: %v", err)
 	}
 
 	a, _ := json.Marshal(finalReplay)
 	b, _ := json.Marshal(finalRestart)
 	if !bytes.Equal(a, b) {
-		t.Fatalf("restart diverged from replay:\nreplay=%s\nrestart=%s", a, b)
+		t.Fatalf("restart diverged from the uninterrupted run:\nuninterrupted=%s\nrestart=%s", a, b)
 	}
 
 	// The known wallet's valuation matches across the restart boundary too.
@@ -679,11 +679,11 @@ func TestCometCheckpoint_RestartMatchesReplay(t *testing.T) {
 }
 
 // TestCometCheckpoint_PreCometVintageLoads is the upgrade gate: a checkpoint
-// serialized BEFORE the Comet fold existed (no AMMPools, backstop LP fields and
+// serialized BEFORE Comet decoding existed (no AMMPools, backstop LP fields and
 // price bindings all "") must restore into a Comet-registered adapter, and the
 // first ledger carrying the Comet writes must land the full valuation — byte
-// for byte what an uninterrupted post-upgrade fold produces. The vintage is
-// simulated by folding the same deploy without Comet registration and blanking
+// for byte what an uninterrupted post-upgrade decode produces. The vintage is
+// simulated by decoding the same deploy without Comet registration and blanking
 // the two price-binding fields; the pre-Comet reducer's output differs from
 // that only in those fields (it never populated them).
 func TestCometCheckpoint_PreCometVintageLoads(t *testing.T) {
@@ -703,7 +703,7 @@ func TestCometCheckpoint_PreCometVintageLoads(t *testing.T) {
 			stateChange(t, f.cometID, variantVal(t, "TotalShares"), i128Val(100_000_000_000)),
 		}
 	}
-	// The deploy ledger minus the Comet writes: what a pre-Comet relay folded.
+	// The deploy ledger minus the Comet writes: what a pre-Comet adapter decoded.
 	preCometChanges := func(t *testing.T) []bindings.ContractDataChange {
 		t.Helper()
 		changes := f.deployChanges(t)
@@ -723,7 +723,7 @@ func TestCometCheckpoint_PreCometVintageLoads(t *testing.T) {
 	vintage.RegisterContracts(f.poolID, f.backstopID, f.oracleID)
 	vintageState, err := vintage.DecodeState(nil, preCometChanges(t), 100)
 	if err != nil {
-		t.Fatalf("vintage fold: %v", err)
+		t.Fatalf("vintage decode: %v", err)
 	}
 	for i := range vintageState.Backstops {
 		vintageState.Backstops[i].BLNDPriceUSD = ""
@@ -734,7 +734,7 @@ func TestCometCheckpoint_PreCometVintageLoads(t *testing.T) {
 		t.Fatalf("marshal vintage checkpoint: %v", err)
 	}
 
-	// Restore into the upgraded, Comet-registered adapter; fold the Comet writes.
+	// Restore into the upgraded, Comet-registered adapter; decode the Comet writes.
 	var restored bindings.LedgerState
 	if err := json.Unmarshal(raw, &restored); err != nil {
 		t.Fatalf("unmarshal vintage checkpoint: %v", err)
@@ -743,7 +743,7 @@ func TestCometCheckpoint_PreCometVintageLoads(t *testing.T) {
 	f.register(upgraded)
 	fromVintage, err := upgraded.DecodeState(&restored, cometWrites(t), 101)
 	if err != nil {
-		t.Fatalf("fold on vintage checkpoint: %v", err)
+		t.Fatalf("decode on vintage checkpoint: %v", err)
 	}
 
 	// Uninterrupted post-upgrade run over the same ledgers.
@@ -751,27 +751,27 @@ func TestCometCheckpoint_PreCometVintageLoads(t *testing.T) {
 	f.register(fresh)
 	freshDeployed, err := fresh.DecodeState(nil, preCometChanges(t), 100)
 	if err != nil {
-		t.Fatalf("fresh fold 100: %v", err)
+		t.Fatalf("fresh decode 100: %v", err)
 	}
 	fromFresh, err := fresh.DecodeState(freshDeployed, cometWrites(t), 101)
 	if err != nil {
-		t.Fatalf("fresh fold 101: %v", err)
+		t.Fatalf("fresh decode 101: %v", err)
 	}
 
 	a, _ := json.Marshal(fromVintage)
 	b, _ := json.Marshal(fromFresh)
 	if !bytes.Equal(a, b) {
-		t.Fatalf("vintage checkpoint diverged from uninterrupted fold:\nvintage=%s\nfresh=%s", a, b)
+		t.Fatalf("vintage checkpoint diverged from the uninterrupted decode:\nvintage=%s\nfresh=%s", a, b)
 	}
 	position := backstopFor(t, fromVintage, f.userA, f.poolID)
 	if position.LPTokenSupplyRaw != "100000000000" || position.LPBLNDReserveRaw != "80000000000000" ||
 		position.BLNDPriceUSD != "0.05" || position.USDCPriceUSD != "0.9999999" {
-		t.Fatalf("vintage checkpoint did not fold to full valuation: %+v", position)
+		t.Fatalf("vintage checkpoint did not decode to full valuation: %+v", position)
 	}
 }
 
 // TestCometFold_PoolBackstopValued covers the pool-level aggregate row
-// (bindings.Backstop): component amounts and USD from the folded Comet state.
+// (bindings.Backstop): component amounts and USD from the decoded Comet state.
 func TestCometFold_PoolBackstopValued(t *testing.T) {
 	t.Parallel()
 
@@ -805,7 +805,7 @@ func TestCometFold_PoolBackstopValued(t *testing.T) {
 }
 
 // TestIncrementalParity_CometBackstop extends the two-strategy byte-parity
-// gate to the Comet fold: full Comet state, a token reorder, a partial
+// gate to Comet decoding: full Comet state, a token reorder, a partial
 // same-ledger update, a TTL expiry, and a missing record leg must all produce
 // byte-identical state and identical dirty sets across paranoid and
 // incremental.
@@ -846,7 +846,7 @@ func TestIncrementalParity_CometBackstop(t *testing.T) {
 	)
 }
 
-// TestProjectBackstopPositions covers the affected-holder projector: only the
+// TestProjectBackstopPositions covers the affected-holder projection: only the
 // dirty pairs' backstop rows come back, summaries are never emitted from a
 // backstop-only state, and an unknown pair projects nothing.
 func TestProjectBackstopPositions(t *testing.T) {
@@ -877,7 +877,7 @@ func TestProjectBackstopPositions(t *testing.T) {
 	// 5000000000/10000000000 shares -> 20000000000 LP -> components 0.2 of each
 	// reserve; USD = 3.2e6*0.05*... see the neutral vectors.
 	if row.USDValue == "" {
-		t.Fatalf("expected valued USD for the folded wallet, metadata %+v", row.Metadata)
+		t.Fatalf("expected valued USD for the decoded wallet, metadata %+v", row.Metadata)
 	}
 	if out.Summaries != nil {
 		t.Fatalf("a backstop-only projection must never emit summaries, got %+v", out.Summaries)

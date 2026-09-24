@@ -137,7 +137,7 @@ func TestDiscoverPoolsFromMeta(t *testing.T) {
 	}
 
 	// The deploy events land in TransactionMetaV3 on protocol 20–22 ledgers and in
-	// TransactionMetaV4 on protocol 23+; a backfill from a mainnet deploy floor
+	// TransactionMetaV4 on protocol 23+; a scan from a mainnet deploy floor
 	// spans both, so both layouts must enumerate identically.
 	for _, meta := range []string{"v3", "v4"} {
 		t.Run(meta, func(t *testing.T) {
@@ -184,8 +184,8 @@ func TestDiscoverPoolsFromMetaEmptyFactorySet(t *testing.T) {
 }
 
 // buildCloseMeta assembles a V1 LedgerCloseMeta with a single transaction whose
-// apply meta (V3 or V4) carries the given contract events, so the whole bronze
-// raw_meta scan path (unmarshal -> per-tx event walk -> decode) is exercised end
+// apply meta (V3 or V4) carries the given contract events, so the whole raw
+// ledger-meta scan path (unmarshal -> per-tx event walk -> decode) is exercised end
 // to end. The scan reads events and the tx hash straight from TxProcessing, so
 // no TxSet or signed envelope is needed.
 func buildCloseMeta(t *testing.T, ledgerSeq uint32, txHashHex string, events []xdr.ContractEvent, metaVersion string) []byte {

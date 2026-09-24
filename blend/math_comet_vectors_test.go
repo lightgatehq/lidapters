@@ -11,7 +11,7 @@ import (
 	"github.com/lightgatehq/lidapters/blend/contracts"
 )
 
-// The neutral V1-09 Comet valuation vectors (testdata/v1_09_comet_vectors.json,
+// The neutral Comet valuation vectors (testdata/v1_09_comet_vectors.json,
 // also embedded — see fixtures.go). Expected values come from a standalone
 // integer oracle, not from this package; a floor->ceil, collapsed-stage,
 // missing->zero, or hardcoded-price mutation in the valuation path must fail

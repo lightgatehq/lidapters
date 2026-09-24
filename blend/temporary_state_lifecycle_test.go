@@ -1,8 +1,8 @@
-// Temporary-state lifecycle tests (V1-04 D-05/D-06): the fold exposes
+// Temporary-state lifecycle tests: the state decoder exposes
 // per-ledger auction/queued-reserve transitions from the changed ledger keys
 // (TemporaryStateChangesProvider), and ProjectTemporaryStateChanges turns
 // them into active/inactive lifecycle rows — active with the full payload,
-// inactive with stable identity only, never a fabricated outcome. Both fold
+// inactive with stable identity only, never a fabricated outcome. Both state
 // strategies must expose the identical sorted transition set (parity).
 package blend
 
@@ -178,8 +178,8 @@ func TestTemporaryStateChanges_QueuedReserveCreateReplaceRemoveRestore(t *testin
 }
 
 // TestTemporaryStateChanges_RemovalWithoutPriorStillCarriesIdentity is the
-// bounded-replay contract: a replay that first observes an auction or queued
-// reserve at its REMOVAL ledger (its create is before the replay floor) still
+// bounded-window contract: a decode window that first observes an auction or
+// queued reserve at its REMOVAL ledger (its create is before the window floor) still
 // reports the transition, because the identity comes from the removed ledger
 // key — never from comparing full previous/current state slices.
 func TestTemporaryStateChanges_RemovalWithoutPriorStillCarriesIdentity(t *testing.T) {
@@ -301,7 +301,7 @@ func TestProjectTemporaryStateChanges_InactivePayloadIsAbsent(t *testing.T) {
 
 // TestTemporaryStateChanges_DeterministicOrder pins the exposed sort:
 // (kind, pool, user, auction type, asset), independent of change order in the
-// fold input.
+// decode input.
 func TestTemporaryStateChanges_DeterministicOrder(t *testing.T) {
 	t.Parallel()
 

@@ -11,7 +11,7 @@ func TestDeployPinsParse(t *testing.T) {
 }
 
 func TestDeployPinTestnetResolves(t *testing.T) {
-	// Exact create_contract ledgers (replacing the old 3294000 SHELLBOOK approx).
+	// Exact create_contract ledgers (replacing the earlier 3294000 approximation).
 	cases := map[string]int64{
 		"CANNO5MLDIANFGZBIFUAYLY2GZLMJOVQKIGBEGWYWQRCRR3QYKEKJAXU": 3289010, // pool
 		"CCSXSQDUZLCRIGRWLCYK3F547PLBGSFTUVJRQCIXRO2ZDI3VIZKN3NH2": 3288990, // oracle

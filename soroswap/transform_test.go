@@ -16,9 +16,9 @@ import (
 	"github.com/stellar/go-stellar-sdk/xdr"
 )
 
-// goldActivityTypeCheck is the frozen gold vocabulary — the CHECK constraint
-// soroswap_activity_type_vocabulary in docs/gold-ddl/020_soroswap_gold.sql
-// (relay.rs), copied name-for-name. The enumerating tests below pin the
+// goldActivityTypeCheck is the frozen activity-type vocabulary that downstream
+// consumers enforce as a CHECK constraint, transcribed name-for-name. The
+// enumerating tests below pin the
 // adapter's vocabulary to exactly this set, both directions.
 var goldActivityTypeCheck = []string{"deposit", "swap", "withdraw", "sync", "skim"}
 
@@ -106,16 +106,16 @@ func eventAdapter(t *testing.T) *Adapter {
 }
 
 // TestActivityVocabularyEnumeratesGoldCheck pins both directions: every name
-// in the frozen gold CHECK classifies to an activity under exactly that name,
+// in the frozen vocabulary classifies to an activity under exactly that name,
 // and the adapter's vocabulary contains nothing else.
 func TestActivityVocabularyEnumeratesGoldCheck(t *testing.T) {
 	if len(pairActivityVocabulary) != len(goldActivityTypeCheck) {
-		t.Fatalf("adapter vocabulary %v has %d names, gold CHECK has %d",
+		t.Fatalf("adapter vocabulary %v has %d names, frozen vocabulary has %d",
 			pairActivityVocabulary, len(pairActivityVocabulary), len(goldActivityTypeCheck))
 	}
 	for _, name := range goldActivityTypeCheck {
 		if _, ok := pairActivityVocabulary[name]; !ok {
-			t.Fatalf("gold CHECK name %q missing from adapter vocabulary", name)
+			t.Fatalf("frozen vocabulary name %q missing from adapter vocabulary", name)
 		}
 	}
 	a := eventAdapter(t)
@@ -134,7 +134,7 @@ func TestActivityVocabularyEnumeratesGoldCheck(t *testing.T) {
 		}
 		act := out.Activities[0]
 		if string(act.ActivityType) != name {
-			t.Fatalf("%s stored as %q — the gold CHECK requires the exact on-chain name", name, act.ActivityType)
+			t.Fatalf("%s stored as %q — the frozen vocabulary requires the exact on-chain name", name, act.ActivityType)
 		}
 		// Multi-legged payloads: no fabricated single-asset aggregate.
 		if act.AssetID != "" || act.AmountRaw != "" {

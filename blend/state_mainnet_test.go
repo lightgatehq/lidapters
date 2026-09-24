@@ -7,7 +7,7 @@ package blend
 // https://mainnet.sorobanrpc.com (see each fixture's _comment for the exact
 // ledger inventory). All XDR is untouched; every expected constant below was
 // hand-derived from the on-chain XDR with an independent decoder
-// (scratchpad/fixture-capture/scval.py), not read back from this package.
+// (a standalone ScVal decoder script), not read back from this package.
 //
 // Hand-derived anchors:
 //
@@ -164,7 +164,7 @@ func newMainnetAdapter(t *testing.T) *Adapter {
 }
 
 // mainnetPrior seeds both pools with their real reserve lists (per the live
-// ResList entries) — the shape the pool fold produces long before the fixture
+// ResList entries) — the shape pool decoding produces long before the fixture
 // window opens. The reserve LISTS are what EmisData/UserEmis resolution keys
 // off; every reserve value asserted below comes from fixture XDR.
 func mainnetPrior() *bindings.LedgerState {
@@ -227,7 +227,7 @@ func findAuction(state *bindings.LedgerState, pool, user string, auctType int32)
 	return nil
 }
 
-// TestBlendMainnet_AuctionLifecycle folds the real liquidation
+// TestBlendMainnet_AuctionLifecycle applies the real liquidation
 // (63627277 create -> 63627456 fill) and the real interest auction
 // (63637204 create -> 63637440 fill) and pins the decoded AuctionState
 // against the hand-derived on-chain values.
@@ -542,10 +542,10 @@ func TestBlendMainnet_AuctionEventStructure(t *testing.T) {
 	}
 }
 
-// TestBlendMainnet_FullExitReplay replays the real full exit at 63636721:
+// TestBlendMainnet_FullExitReplay reproduces the real full exit at 63636721:
 // prior state is seeded from the entry's own pre-change STATE image (real
 // on-chain prior value, captured from the same close meta), then the exit
-// ledger folds an all-empty Positions write on top. The user's position must
+// ledger applies an all-empty Positions write on top. The user's position must
 // clear, and the dirty-positions seam must report the pair as an upsert (the
 // entry still exists on-chain, holding empty maps — Blend never deletes it).
 func TestBlendMainnet_FullExitReplay(t *testing.T) {
@@ -578,7 +578,7 @@ func TestBlendMainnet_FullExitReplay(t *testing.T) {
 		t.Fatal("full-exit Positions change with prior image not in fixture")
 	}
 
-	// Seed the prior world: the user's real pre-exit Positions entry, folded
+	// Seed the prior world: the user's real pre-exit Positions entry, decoded
 	// one ledger before the exit.
 	seed := bindings.ContractDataChange{
 		ContractID:         exitChange.ContractID,
@@ -598,7 +598,7 @@ func TestBlendMainnet_FullExitReplay(t *testing.T) {
 		t.Fatalf("seeded prior positions = %+v, want the real pre-exit collateral {USDC: 66684 bTokens}", got)
 	}
 
-	// Replay the real exit ledger.
+	// Apply the real exit ledger.
 	after, err := adapter.DecodeStateAt(prior, exitLedger.Changes, exitLedger.LedgerSeq, time.Unix(exitLedger.CloseTimeUnix, 0).UTC())
 	if err != nil {
 		t.Fatalf("decode exit ledger: %v", err)
@@ -637,7 +637,7 @@ func nonZeroPositions(state *bindings.LedgerState, address string) []contracts.U
 
 // TestBlendMainnet_LiveConfigIdentity applies the live-snapshot entries (pool
 // instances, ResList, PoolEmis, backstop instance + RZ/DropList) as a single
-// fold and pins the instance-identity and PoolEmis decode against the real
+// decode pass and pins the instance-identity and PoolEmis decode against the real
 // on-chain configuration.
 func TestBlendMainnet_LiveConfigIdentity(t *testing.T) {
 	t.Parallel()
@@ -761,18 +761,18 @@ func TestBlendMainnet_LiveConfigIdentity(t *testing.T) {
 }
 
 // witnessUser33 is the wallet whose YieldBlox positions were misattributed in
-// the #33 mainnet repro (bounded replay 62,986,500–62,988,499, ledger
+// the #33 mainnet repro (bounded decode window 62,986,500–62,988,499, ledger
 // 62,986,834). The amounts below are hand-derived from that ledger's decoded
 // Positions entry XDR: collateral {0: 210,346,315,861 (XLM), 1: 16,523,965,334
 // (USDC)}, liabilities {0: 14,746,315,917, 1: 12,665,205,938}.
 const witnessUser33 = "GD4EN5NB25YLXKTCUV7XPIPDL6RUQEC7L7T7JMB2QMGPFSKAHNMFWGC6"
 
-// TestBlendMainnet_BoundedReplayUnknownIndexNeverMisattributes replays the #33
-// witness shape: a pinned-start bounded replay with no config seed, where only
+// TestBlendMainnet_BoundedReplayUnknownIndexNeverMisattributes reproduces the #33
+// witness shape: a pinned-start bounded window with no config seed, where only
 // USDC's ResData has appeared in-window before the witness wallet's Positions
-// entry folds at 62,986,834. USDC's reserve holds the zero-value index, so the
-// uncorrected fold labels the XLM bucket-0 amounts as USDC and drops the true
-// USDC bucket-1 legs. The corrected fold emits no position rows at all: both
+// entry applies at 62,986,834. USDC's reserve holds the zero-value index, so the
+// uncorrected decoder labels the XLM bucket-0 amounts as USDC and drops the true
+// USDC bucket-1 legs. The corrected decoder emits no position rows at all: both
 // indexes are unmapped, and skipped legs surface as diagnostics instead.
 func TestBlendMainnet_BoundedReplayUnknownIndexNeverMisattributes(t *testing.T) {
 	t.Parallel()
@@ -813,7 +813,7 @@ func TestBlendMainnet_BoundedReplayUnknownIndexNeverMisattributes(t *testing.T) 
 	// All four skipped legs (collateral and liabilities, buckets 0 and 1)
 	// surface as unmapped_reserve_index diagnostics at the witness ledger, with
 	// the ResData-only USDC reserve as the sole candidate — the skip is loud,
-	// so a bounded replay that hits this is visibly incomplete.
+	// so a bounded window that hits this is visibly incomplete.
 	diags := adapter.LastDecodeDiagnostics()
 	wantAmounts := map[string]string{
 		"collateral|0": "210346315861",

@@ -2,7 +2,7 @@ package aquarius
 
 // Per-name activity attribution tests, pinned against the shapes the chain
 // emits (one shape per name, sampled from the mainnet event stream — the
-// same observations the cross-engine reference encodes). Wallet and asset
+// same observations the reference vectors encode). Wallet and asset
 // slots are fixed topic/data positions; amounts are fixed data-vector
 // indices. A name with no acting wallet attributes to the emitting contract
 // itself — never an empty address, never a same-transaction bystander.

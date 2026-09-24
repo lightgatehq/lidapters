@@ -1,6 +1,6 @@
 package blend
 
-// Demonstrates Change 2's cost claim: Adapter.ProjectPositions on a single
+// Demonstrates the dirty-set cost claim: Adapter.ProjectPositions on a single
 // dirty (address, pool) pair costs O(dirty users), not O(all users) — the
 // defect this closes is a per-ledger emission consumer running the full
 // Transform (O(all users), ~11.5k on mainnet) on every event ledger. Compare:
@@ -123,11 +123,11 @@ func benchResDataChange(b *testing.B, poolID string, assetSeed byte) bindings.Co
 	return benchStateChange(b, poolID, key, value)
 }
 
-// benchFoldedState folds a one-reserve pool plus totalUsers Positions writes
+// benchFoldedState decodes a one-reserve pool plus totalUsers Positions writes
 // through a real DecodeState pass (in the given mode), so an incremental
 // strategy's position cache (state_incremental.go's s.index) is genuinely
 // populated — the only way ProjectPositions' O(1)-per-pair lookup path is
-// exercised. The one-time fold cost is O(totalUsers) but happens once, before
+// exercised. The one-time decode cost is O(totalUsers) but happens once, before
 // the timed loop; it is not what either benchmark below measures.
 func benchFoldedState(b *testing.B, mode StateMode, poolID string, assetSeed byte, totalUsers int) (*Adapter, *bindings.LedgerState) {
 	b.Helper()
@@ -146,7 +146,7 @@ func benchFoldedState(b *testing.B, mode StateMode, poolID string, assetSeed byt
 	}
 	state, err := adapter.DecodeState(nil, changes, 1000)
 	if err != nil {
-		b.Fatalf("seed fold: %v", err)
+		b.Fatalf("seed state: %v", err)
 	}
 	return adapter, state
 }

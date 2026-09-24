@@ -1,8 +1,8 @@
 package blend
 
-// The permanent two-strategy parity gate. Every sequence here is folded
-// through BOTH state-fold strategies — paranoid (the reference oracle) and
-// incremental — and the serialized LedgerState plus the silver-debug delta
+// The permanent two-strategy parity gate. Every sequence here is decoded
+// through BOTH state strategies — paranoid (the reference oracle) and
+// incremental — and the serialized LedgerState plus the debug delta
 // stream must be byte-identical at EVERY ledger, not just at the end. Any
 // change to either side of the seam (state.go's reference reducer or
 // state_incremental.go's carried mirror) answers to these tests.
@@ -23,15 +23,15 @@ import (
 	"github.com/stellar/go-stellar-sdk/xdr"
 )
 
-// parityLedger is one ledger of fold input.
+// parityLedger is one ledger of decode input.
 type parityLedger struct {
 	seq     int64
 	close   time.Time
 	changes []bindings.ContractDataChange
 }
 
-// parityRun folds the same ledgers through a paranoid and an incremental
-// adapter side by side, tracking each fold's own prior chain.
+// parityRun decodes the same ledgers through a paranoid and an incremental
+// adapter side by side, tracking each strategy's own prior chain.
 type parityRun struct {
 	t           *testing.T
 	paranoid    *Adapter
@@ -50,8 +50,8 @@ type parityRun struct {
 
 // newParityRun builds the two adapters. register applies identical
 // registration (owned contracts, feeds, assets) to each; prior seeds both
-// folds — supplied as a constructor so each adapter gets its own instance and
-// the two folds share no memory.
+// strategies — supplied as a constructor so each adapter gets its own instance and
+// the two strategies share no memory.
 func newParityRun(t *testing.T, register func(*Adapter), prior func() *bindings.LedgerState) *parityRun {
 	t.Helper()
 	run := &parityRun{t: t}
@@ -80,7 +80,7 @@ func (r *parityRun) strategy() *incrementalStrategy {
 	return r.incremental.state.(*incrementalStrategy)
 }
 
-// foldLedger advances both folds one ledger and reports whether the outputs
+// foldLedger advances both strategies one ledger and reports whether the outputs
 // (state JSON and delta stream) match, without failing the test — the
 // red-check tests need the non-fatal form.
 func (r *parityRun) foldLedger(ledger parityLedger) (equal bool, detail string) {
@@ -327,7 +327,7 @@ func TestIncrementalParity_OracleCarry(t *testing.T) {
 	}
 }
 
-// TestIncrementalParity_ReflectorGoldenFixture folds the REAL mainnet
+// TestIncrementalParity_ReflectorGoldenFixture decodes the REAL mainnet
 // Reflector fixture (feeds, both storage protocols, aggregator config
 // assembly, close-time staleness) through both modes at real close times.
 func TestIncrementalParity_ReflectorGoldenFixture(t *testing.T) {
@@ -386,7 +386,7 @@ func TestIncrementalParity_EvictionTTLFixtures(t *testing.T) {
 }
 
 // findPendingUser and findUserPosition locate one user's carried entries in a
-// folded LedgerState — the archive-fixture assertions below need to inspect
+// decoded LedgerState — the archive-fixture assertions below need to inspect
 // Archived/ArchivedLedgerSeq on both the raw carry and the resolved row.
 func findPendingUser(state *bindings.LedgerState, address, poolID string) (contracts.PendingUserPosition, bool) {
 	for _, p := range state.PendingUserPositions {
@@ -407,8 +407,8 @@ func findUserPosition(state *bindings.LedgerState, address, poolID, assetID stri
 }
 
 // positionsArchiveFixturePool bootstraps a one-reserve pool (asset at index 2,
-// matching the GCA5FO3F-class fixture below) through both fold strategies and
-// returns the run plus the reserve's asset ID for the caller to keep folding.
+// matching the GCA5FO3F-class fixture below) through both state strategies and
+// returns the run plus the reserve's asset ID for the caller to keep decoding.
 func positionsArchiveFixturePool(t *testing.T, poolID string, ledgerSeq int64) (*parityRun, string) {
 	t.Helper()
 	assetID := validContractString(t, 32)
@@ -444,12 +444,12 @@ func fixedCollateralPositions(t *testing.T, amount int64) xdr.ScVal {
 }
 
 // TestIncrementalParity_DormantHolderSurvivesEviction pins the GCA5FO3F-class
-// mainnet holder Change 1 fixes: Fixed collateral {2: 10766} last touched at
+// mainnet holder the archive-in-place change fixes: Fixed collateral {2: 10766} last touched at
 // ledger 59,972,079, then untouched for many ledgers before its entry is swept
 // by the network's own eviction (CAP-0062) — the realistic shape for a truly
-// dormant entry (Live=false, ValueXDR nil, ChangeType "evicted"; see
-// relay.lightgate.xyz/internal/relay/state/extract.go's foldEvictedKeys). Both
-// fold strategies must keep the user's position archived-but-present, byte
+// dormant entry (Live=false, ValueXDR nil, ChangeType "evicted" — the shape
+// a caller's extraction produces for a network-evicted key). Both
+// state strategies must keep the user's position archived-but-present, byte
 // for byte, through the eviction ledger and every quiet ledger after it — the
 // old code purged it from Users AND PendingUserPositions outright.
 func TestIncrementalParity_DormantHolderSurvivesEviction(t *testing.T) {
@@ -493,7 +493,7 @@ func TestIncrementalParity_DormantHolderSurvivesEviction(t *testing.T) {
 }
 
 // TestIncrementalParity_PositionsTTLLapseArchives covers the other liveness
-// shape Change 1 must handle: an entry whose data DID fold this ledger but
+// shape the archive-in-place change must handle: an entry whose data DID apply this ledger but
 // whose LiveUntilLedgerSeq is already behind the current ledger (Live stays
 // true at the change-type level; DecodeState forces it not-live from the TTL
 // annotation — see apply()'s live computation). ValueXDR stays populated in
@@ -525,12 +525,12 @@ func TestIncrementalParity_PositionsTTLLapseArchives(t *testing.T) {
 	}
 }
 
-// TestIncrementalParity_ReserveTTLLapseArchives is Change 1's other half: a
+// TestIncrementalParity_ReserveTTLLapseArchives is the archive-in-place change's other half: a
 // reserve's ResConfig/ResData entry (not a user's Positions entry) going
 // not-live via TTL lapse/eviction must archive-in-place, keeping the
 // reserveByIndex slot so positionsFromMap keeps resolving every holder's
 // position in this asset — dropping it (the old applyDelete behavior) would
-// silently zero every one of those holders' rows. A user's position folded
+// silently zero every one of those holders' rows. A user's position decoded
 // against the still-present (now archived) reserve must keep resolving.
 func TestIncrementalParity_ReserveTTLLapseArchives(t *testing.T) {
 	t.Parallel()
@@ -583,11 +583,11 @@ func TestIncrementalParity_ReserveTTLLapseArchives(t *testing.T) {
 }
 
 // TestIncrementalParity_ExplicitCloseSurfacesRemoval is the control case for
-// Change 1's discriminator: a genuine on-chain delete (ChangeType a
+// the archive-in-place discriminator: a genuine on-chain delete (ChangeType a
 // LedgerEntryChangeTypeLedgerEntryRemoved string) must still purge the entry
-// exactly as before — never archive — and Change 2's exposed dirty set must
+// exactly as before — never archive — and the exposed dirty set must
 // report it as a DirtyRemoval, not a DirtyUpsert (an archived TTL-lapse is a
-// DirtyUpsert; see bindings.DirtyKind's doc). Both fold strategies must agree.
+// DirtyUpsert; see bindings.DirtyKind's doc). Both state strategies must agree.
 func TestIncrementalParity_ExplicitCloseSurfacesRemoval(t *testing.T) {
 	t.Parallel()
 	poolID := validContractString(t, 51)
@@ -600,7 +600,7 @@ func TestIncrementalParity_ExplicitCloseSurfacesRemoval(t *testing.T) {
 
 	// Drive the removal ledger through Adapter.DecodeStateAt directly (not the
 	// bare strategy foldLedger uses) so LastDirtyPositions — the adapter-level
-	// exposure Change 2 adds — is actually populated.
+	// exposure the dirty-set change adds — is actually populated.
 	removal := []bindings.ContractDataChange{
 		stateChange(t, poolID, variantVal(t, "Positions", accountAddressVal(t, 53)), fixedCollateralPositions(t, 0),
 			withLive(false), withNoValue(), withChangeType("LedgerEntryChangeTypeLedgerEntryRemoved")),
@@ -641,7 +641,7 @@ func TestIncrementalParity_ExplicitCloseSurfacesRemoval(t *testing.T) {
 
 // TestIncrementalParity_CheckpointReseed is the checkpoint-restore path: the
 // state is serialized and re-loaded mid-sequence (so the incremental strategy
-// sees a prior that is NOT its own last output and must reseed), then the fold
+// sees a prior that is NOT its own last output and must reseed), then decoding
 // continues through both modes.
 func TestIncrementalParity_CheckpointReseed(t *testing.T) {
 	t.Parallel()
@@ -649,7 +649,7 @@ func TestIncrementalParity_CheckpointReseed(t *testing.T) {
 	run := newParityRun(t, nil, nil)
 	run.fold(sequence[:6]...)
 
-	// Serialize + reload both sides — same JSON round-trip the relay's fold
+	// Serialize + reload both sides — same JSON round-trip a host's state
 	// checkpoints go through.
 	var restored bindings.LedgerState
 	if err := json.Unmarshal(mustMarshalState(t, run.iState), &restored); err != nil {
@@ -665,7 +665,7 @@ func TestIncrementalParity_CheckpointReseed(t *testing.T) {
 }
 
 // TestIncrementalParity_RunTwiceByteIdentical is the determinism gate for the
-// incremental mode: two fresh incremental folds of the same sequence must
+// incremental mode: two fresh incremental decodes of the same sequence must
 // serialize byte-identically (the incremental analog of
 // TestDecodeState_RunTwiceByteIdentical).
 func TestIncrementalParity_RunTwiceByteIdentical(t *testing.T) {
@@ -783,7 +783,7 @@ func TestIncrementalParity_RedCheck(t *testing.T) {
 	})
 }
 
-// TestIncrementalParity_ReserveIndexValidityDiagnostics folds the #33
+// TestIncrementalParity_ReserveIndexValidityDiagnostics applies the #33
 // lifecycle — ResData-before-ResConfig skips, a quiet carry ledger, the
 // correcting remap, a duplicate-known-index window, and the duplicate's
 // removal — through both strategies and asserts byte-identical state, deltas,
@@ -810,10 +810,10 @@ func TestIncrementalParity_ReserveIndexValidityDiagnostics(t *testing.T) {
 			resDataChange(t, pool1, usdcAsset),
 			witnessPositionsChange(t, pool1, user5),
 		}},
-		// Quiet carry: the unresolved legs persist but the fold touched
+		// Quiet carry: the unresolved legs persist but the decoder touched
 		// nothing, so no diagnostics re-emit.
 		{seq: 201},
-		// The correcting remap: both ResConfigs fold, every leg resolves.
+		// The correcting remap: both ResConfigs apply, every leg resolves.
 		{seq: 202, changes: []bindings.ContractDataChange{
 			resConfigChange(t, pool1, xlmAsset, 0),
 			resConfigChange(t, pool1, usdcAsset, 1),
@@ -865,12 +865,12 @@ func TestIncrementalParity_ReserveIndexValidityDiagnostics(t *testing.T) {
 	}
 }
 
-// TestIncrementalParity_TemporaryStateChanges folds auction and
+// TestIncrementalParity_TemporaryStateChanges applies auction and
 // queued-reserve create/update/remove/restore ledgers through both strategies
 // and asserts the exposed TemporaryStateChange set is identical at every
-// ledger (the harness compares it fold-by-fold) and matches the expected
+// ledger (the harness compares it ledger-by-ledger) and matches the expected
 // per-ledger transitions — including a removal observed without its create
-// (the bounded-replay case).
+// (the bounded-window case).
 func TestIncrementalParity_TemporaryStateChanges(t *testing.T) {
 	t.Parallel()
 	pool1 := validContractString(t, 1)
@@ -899,8 +899,8 @@ func TestIncrementalParity_TemporaryStateChanges(t *testing.T) {
 		{seq: 104, changes: []bindings.ContractDataChange{
 			stateChange(t, pool1, auctionKey, auctionValueVal(t, 104)),
 		}},
-		// Bounded-replay shape: a removal for an identity never created in
-		// this fold chain (different auction type) still fires.
+		// Bounded-window shape: a removal for an identity never created in
+		// this decode chain (different auction type) still fires.
 		{seq: 105, changes: []bindings.ContractDataChange{
 			stateChange(t, pool1, auctionKeyVal(t, user5, 1), auctionValueVal(t, 105), withLive(false), withNoValue(), withChangeType("Removed")),
 		}},

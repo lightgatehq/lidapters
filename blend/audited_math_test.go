@@ -63,7 +63,7 @@ func TestV2RateModifierScaleAndUtilizationClamp(t *testing.T) {
 	}
 }
 
-// TestTransform_ReserveEmissions is the relay#26 fold gate at the transform
+// TestTransform_ReserveEmissions is the reserve-emissions gate at the transform
 // layer: a reserve with an active supply-side emission config produces exactly
 // one ReserveEmission row (never a fabricated borrow-side row for the absent
 // config), carrying the raw eps/expiration and an unavailable ("") APY since no
@@ -352,8 +352,8 @@ func TestBackstopShareAndTokenAccounting(t *testing.T) {
 	}
 }
 
-// TestBackstopPoolTotalEmittedOnReserves covers the pool-level backstop total
-// (relay.lightgate.xyz#25 / orion.lightgate.xyz#37): a per-pool aggregate,
+// TestBackstopPoolTotalEmittedOnReserves covers the pool-level backstop total:
+// a per-pool aggregate,
 // distinct from the per-user bindings.Position rows TestBackstopShareAndTokenAccounting
 // covers above. It must emit from PoolState alone, with zero backstop users —
 // the whole point of carrying these totals on PoolState instead of only on
@@ -659,7 +659,7 @@ func TestReservePositionEmissionsSurfaceWhenBaseAPRInvalid(t *testing.T) {
 }
 
 // TestActivityUSDValuedAtReserveLedgerPrice pins the activity valuation seam:
-// an asset-bearing activity is valued at the folded oracle price its reserve
+// an asset-bearing activity is valued at the decoded oracle price its reserve
 // carries at that ledger (units × price), from in-state data only. Stale
 // event-metadata price stamps (the never-produced event_ledger_usd_price
 // contract this replaced) are ignored.
@@ -742,7 +742,7 @@ func TestActivityUSDValuedAtReserveLedgerPrice(t *testing.T) {
 }
 
 // TestActivityUSDWithoutFoldedPriceStaysNull pins the unavailability contract:
-// an activity whose asset has no folded oracle price — reserve present but
+// an activity whose asset has no decoded oracle price — reserve present but
 // price missing, or no reserve at all (e.g. a reward token) — keeps a NULL
 // usd_value with the explicit marker, never a fabricated zero.
 func TestActivityUSDWithoutFoldedPriceStaysNull(t *testing.T) {
@@ -812,7 +812,7 @@ func TestActivityUSDWithoutFoldedPriceStaysNull(t *testing.T) {
 					RTwoRaw:         "0",
 					RThreeRaw:       "0",
 					RateModifierRaw: "10000000",
-					// No OraclePriceRaw: the reserve has folded data but no price.
+					// No OraclePriceRaw: the reserve has decoded data but no price.
 					OracleDecimals: 8,
 				}},
 			}},
@@ -829,7 +829,7 @@ func TestActivityUSDWithoutFoldedPriceStaysNull(t *testing.T) {
 			t.Fatalf("fabricated zero USD value for %s", activity.TxHash)
 		}
 		if activity.USDValue != "" {
-			t.Fatalf("expected NULL USD value without folded price for %s, got %s", activity.TxHash, activity.USDValue)
+			t.Fatalf("expected NULL USD value without a decoded price for %s, got %s", activity.TxHash, activity.USDValue)
 		}
 		if activity.Metadata["event_price_unavailable"] != "true" {
 			t.Fatalf("expected event_price_unavailable marker for %s", activity.TxHash)

@@ -75,7 +75,7 @@ func representativeChanges(t *testing.T) []bindings.ContractDataChange {
 }
 
 // TestDecodeState_RunTwiceByteIdentical is the determinism gate: the same
-// (prior, changes, ledgerSeq) folded twice must serialize byte-identically. This
+// (prior, changes, ledgerSeq) decoded twice must serialize byte-identically. This
 // catches map-iteration-order leaks and hidden accumulators that a stateless
 // pure reducer must not have.
 func TestDecodeState_RunTwiceByteIdentical(t *testing.T) {
@@ -112,7 +112,7 @@ func TestDecodeState_RunTwiceByteIdentical(t *testing.T) {
 }
 
 // TestApplyReserveConfig_DecodesEnabledAndReactivity is the decode-gap-audit
-// (lidapters#9 / relay#27) regression: ReserveConfig's `enabled` bool and
+// (lidapters#9) regression: ReserveConfig's `enabled` bool and
 // `reactivity` u32 are in the same ScVal map as c_factor/l_factor, so decoding
 // them is a one-line addition to applyReserveConfig, not a new chain read.
 func TestApplyReserveConfig_DecodesEnabledAndReactivity(t *testing.T) {
@@ -158,7 +158,7 @@ func TestApplyReserveConfig_MissingEnabledDefaultsFalse(t *testing.T) {
 	}
 }
 
-// TestDecodeState_ReserveEmissions is the relay#26 fold gate: EmisConfig(3)
+// TestDecodeState_ReserveEmissions is the reserve-emissions decode gate: EmisConfig(3)
 // (res_token_id = reserve_index*2 + side, side 1 = supply) and EmisData(3) on
 // the pool must resolve — via reserveByIndex, itself populated by ResList/
 // ResConfig earlier in the same change set — onto the one reserve at index 1,
@@ -198,7 +198,7 @@ func TestDecodeState_ReserveEmissions(t *testing.T) {
 
 // TestDecodeState_ReserveEmissions_UnresolvedIndexDropped guards the defensive
 // drop path: an EmisConfig for a res_token_id whose reserve index is unknown
-// (ResList/ResConfig never folded for it) must be silently ignored rather than
+// (ResList/ResConfig never decoded for it) must be silently ignored rather than
 // panic or synthesize a reserve out of nothing.
 func TestDecodeState_ReserveEmissions_UnresolvedIndexDropped(t *testing.T) {
 	t.Parallel()
@@ -257,7 +257,7 @@ func TestClearReserveEmisConfig_KeepsReserveAlive(t *testing.T) {
 	}
 }
 
-// TestDecodeState_DeltasSorted asserts the silver-debug deltas are emitted in a
+// TestDecodeState_DeltasSorted asserts the debug deltas are emitted in a
 // stable total-order key, so they do not leak Go's randomized map-iteration
 // order from one run to the next.
 func TestDecodeState_DeltasSorted(t *testing.T) {
@@ -358,7 +358,7 @@ func TestDecodeState_EvictionTTLRestore(t *testing.T) {
 }
 
 // TestBackstopPoolBalanceRoundTripsWithoutUsers decodes a pool's PoolBalance
-// entry (shares/tokens/q4w) and asserts it survives a second ledger fold with
+// entry (shares/tokens/q4w) and asserts it survives a second ledger decode with
 // no new backstop changes and zero backstop users — the pool-level total must
 // round-trip via prior.Pools, not via prior.Backstops, since a pool can have a
 // non-zero backstop balance (e.g. right after a config-only reload restores
@@ -471,9 +471,9 @@ func withChangeType(t string) changeOpt {
 }
 
 // withNoValue clears ValueXDR — the shape a real explicit on-chain delete or
-// network eviction takes in the relay extract (contractDataChange only sets
-// ValueXDR when the underlying LedgerEntryChange is live; foldEvictedKeys
-// never sets it at all). A TTL lapse, by contrast, leaves ValueXDR populated
+// network eviction takes in the caller's extraction (ValueXDR is only set
+// when the underlying LedgerEntryChange is live; an evicted key never carries
+// it at all). A TTL lapse, by contrast, leaves ValueXDR populated
 // (only Live/LiveUntilLedgerSeq flip) — see isExplicitOnChainDelete's doc.
 func withNoValue() changeOpt {
 	return func(c *bindings.ContractDataChange) { c.ValueXDR = nil }
@@ -564,7 +564,7 @@ type oracleLayoutAsset struct {
 // DecodeState (zero DB / network) and proves the missing valuation input is now
 // live: each stored price decodes onto its reserve and reproduces the oracle's
 // lastprice; a non-positive or no-longer-live price is rejected; and a decoded
-// price lights up the health factor and USD value the gold math already builds.
+// price lights up the health factor and USD value the output math already builds.
 func TestOraclePriceDecode(t *testing.T) {
 	t.Parallel()
 
@@ -590,7 +590,7 @@ func TestOraclePriceDecode(t *testing.T) {
 			t.Fatalf("decode: %v", err)
 		}
 
-		// Folding the same input twice must serialize byte-identically, so the
+		// Decoding the same input twice must serialize byte-identically, so the
 		// oracle-derived price does not leak map-iteration order.
 		again, err := adapter.DecodeState(nil, changes, layout.LedgerSeq)
 		if err != nil {

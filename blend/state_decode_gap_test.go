@@ -742,7 +742,7 @@ func TestTransform_ReserveEmissionCarriesIndexAndLastTime(t *testing.T) {
 					SupplyEmisIndexRaw:      "123",
 					SupplyEmisLastTimeRaw:   "1700000000",
 					// Borrow side: accrual only (index/last_time), no eps — the
-					// row must still surface so relay#26 sees the checkpoint.
+					// row must still surface so an emissions consumer sees the checkpoint.
 					BorrowEmisIndexRaw:    "9",
 					BorrowEmisLastTimeRaw: "1700000001",
 				}},
@@ -804,7 +804,7 @@ func TestApplyReserveData_BackstopCreditAndLastTime(t *testing.T) {
 // --- regression + determinism gates ------------------------------------------
 
 // TestDecodeState_PreexistingDecodeUnchanged is the byte-level regression pin:
-// folding the pre-existing representative change set (no new key kinds beyond
+// decoding the pre-existing representative change set (no new key kinds beyond
 // what main already decoded) must produce exactly the same values in every
 // previously-decoded field, and the new fields must stay at their absent zero
 // values except BackstopCreditRaw/LastTimeRaw, which decode from the same
@@ -869,7 +869,7 @@ func TestDecodeState_PreexistingDecodeUnchanged(t *testing.T) {
 }
 
 // decodeGapChanges is representativeChanges plus every new key kind — the
-// change set the determinism and strategy-parity gates below fold.
+// change set the determinism and strategy-parity gates below apply.
 func decodeGapChanges(t *testing.T) []bindings.ContractDataChange {
 	t.Helper()
 	poolID := validContractString(t, 1)
@@ -937,7 +937,7 @@ func TestDecodeState_NewEntitiesRunTwiceByteIdentical(t *testing.T) {
 	}
 }
 
-// TestDecodeState_NewEntitiesStrategyParity folds the same ledgers through the
+// TestDecodeState_NewEntitiesStrategyParity applies the same ledgers through the
 // paranoid and incremental strategies and requires byte-identical output —
 // including a second, carried ledger, so the incremental mirror's
 // normalizeCarry round-trip of the new state is exercised too.

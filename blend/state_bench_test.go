@@ -1,9 +1,9 @@
 package blend
 
-// State-laden fold benchmarks — the defect this seam exists for, in miniature.
-// A fold's cost in paranoid mode is O(total accumulated state) per ledger (the
+// State-laden decode benchmarks — the defect this seam exists for, in miniature.
+// A decode pass's cost in paranoid mode is O(total accumulated state) per ledger (the
 // prior mirror is rebuilt and the whole typed state re-sorted every ledger),
-// so per-ledger throughput decays as users accumulate. Incremental mode folds
+// so per-ledger throughput decays as users accumulate. Incremental mode applies
 // the same ledgers at O(changes), plus the output materialization.
 //
 //	go test ./blend/ -run '^$' -bench StateLadenFold -benchtime 2s
@@ -89,7 +89,7 @@ func benchPositionsChange(b *testing.B, poolID, user string, supply int64) bindi
 }
 
 // benchPrior builds a prior LedgerState carrying nUsers accumulated user
-// positions against one pool — the "600k ledgers into the sprint" shape.
+// positions against one pool — the "600k ledgers into a long run" shape.
 func benchPrior(b *testing.B, poolID string, nUsers int) *bindings.LedgerState {
 	b.Helper()
 	assetID := benchContract(b, 2)

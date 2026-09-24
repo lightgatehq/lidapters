@@ -9,11 +9,10 @@ import (
 	"github.com/stellar/go-stellar-sdk/xdr"
 )
 
-// relayExactEventNames are the 17 values relay migration 017 added to gold's
-// activity_type enum (relay.lightgate.xyz#65/#75). classifyEventName must map
-// each one to itself — any drift here and relay's normalizeActivityType
-// coerces the row to contract_status_change, which then fails gold's
-// lifecycle_synthetic_identity CHECK.
+// relayExactEventNames are the 17 exact Blend v2 event names that downstream
+// activity_type vocabularies carry verbatim. classifyEventName must map each
+// one to itself — any drift here and a downstream normaliser coerces the row to
+// contract_status_change, which then fails its lifecycle-identity constraint.
 var relayExactEventNames = []string{
 	"supply", "supply_collateral", "withdraw_collateral", "claim",
 	"new_auction", "fill_auction", "delete_auction",
@@ -25,7 +24,7 @@ var relayExactEventNames = []string{
 func TestClassifyEventNameExactV2Vocabulary(t *testing.T) {
 	t.Parallel()
 
-	// Every migration-017 name classifies to itself.
+	// Every exact v2 name classifies to itself.
 	for _, name := range relayExactEventNames {
 		if got := classifyEventName(name); string(got) != name {
 			t.Errorf("classifyEventName(%q) = %q, want exact name", name, got)
@@ -82,7 +81,7 @@ func TestClassifyEventNameUnknownFallsBackEmpty(t *testing.T) {
 	}
 }
 
-// TestFillAuctionEventProducesLiquidationActivity is the #65 acceptance pin at
+// TestFillAuctionEventProducesLiquidationActivity is the liquidation acceptance pin at
 // the adapter level: a fill_auction contract event — the on-chain shape of a
 // liquidation, previously dropped by the substring classifier — decodes into an
 // activity under its exact name with the auctioned user as address and the raw
@@ -136,7 +135,7 @@ func TestFillAuctionEventProducesLiquidationActivity(t *testing.T) {
 }
 
 // TestEmissionEventsClassifyExactWithContractFallback pins the emission-side
-// half of #65: gulp_emissions and reserve_emission_update carry no address at
+// half of the exact-name vocabulary: gulp_emissions and reserve_emission_update carry no address at
 // all on-chain, so the adapter must fall back to the emitting contract as the
 // activity address — exact type, raw identity, no quarantine.
 func TestEmissionEventsClassifyExactWithContractFallback(t *testing.T) {

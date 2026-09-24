@@ -290,7 +290,7 @@ func TestMainnetConcentratedRangeDecodeAnchors(t *testing.T) {
 	if len(out.AMMComponents) != len(checks) {
 		t.Fatalf("component count %d, want %d: %#v", len(out.AMMComponents), len(checks), out.AMMComponents)
 	}
-	// D-05 keying: the same owner at different tick bounds must never share a
+	// Position keying: the same owner at different tick bounds must never share a
 	// position group.
 	groups := map[string]struct{}{}
 	for _, c := range out.AMMComponents {
@@ -358,7 +358,7 @@ func TestMainnetConcentratedEntryRemovalClosesOnlyThatRange(t *testing.T) {
 }
 
 // TestTransformQuarantinesInsteadOfDropping pins the two decomposition
-// failure paths: a position against a never-folded pool, and a share state
+// failure paths: a position against a pool whose state was never decoded, and a share state
 // pro-rata cannot decompose. Both must surface as QuarantineEvents, never a
 // silent drop.
 func TestTransformQuarantinesInsteadOfDropping(t *testing.T) {

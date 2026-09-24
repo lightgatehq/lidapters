@@ -2,7 +2,7 @@ package blend
 
 // Reflector decode tests, driven by testdata/reflector_mainnet.json — REAL
 // mainnet contract_data changes (both feed storage protocols and the Fixed
-// aggregator's whole config assembly) extracted from the bronze archive with
+// aggregator's whole config assembly) extracted from archived ledger close meta with
 // untouched XDR. Every expected price constant below was hand-derived from the
 // on-chain values independently of the decoder:
 //
@@ -110,7 +110,7 @@ func newReflectorAdapter(t *testing.T) *Adapter {
 // fixedPoolPrior seeds a prior state holding the real Fixed pool wired to its
 // real aggregator, with its three reserves. The pool's own contract_data is not
 // part of the fixture; what is under test is the price path, and this is the
-// exact shape the pool fold produces for it.
+// exact shape pool decoding produces for it.
 func fixedPoolPrior() *bindings.LedgerState {
 	return &bindings.LedgerState{
 		Pools: []contracts.PoolState{{
@@ -165,7 +165,7 @@ func ledgersThrough(ledgers []reflectorFixtureLedger, seq int64) []reflectorFixt
 	return out
 }
 
-// TestReflector_GoldenFixture_ProtocolTwo folds the whole fixture — aggregator
+// TestReflector_GoldenFixture_ProtocolTwo decodes the whole fixture — aggregator
 // config assembly, protocol-1 rounds, then the 2026 protocol-2 batched rounds —
 // and asserts the Fixed pool's reserves resolve the hand-derived 7-decimal
 // prices of the newest round.
@@ -233,9 +233,9 @@ func TestReflector_GoldenFixture_CacheSeedsDeviationGuard(t *testing.T) {
 	}
 }
 
-// TestReflector_GoldenFixture_ProtocolOne folds only the 2025 ledgers. After
+// TestReflector_GoldenFixture_ProtocolOne applies only the 2025 ledgers. After
 // the config lands with a single observed round, the deviation guard has no
-// older price and the aggregator refuses to serve — the fold must refuse too.
+// older price and the aggregator refuses to serve — the decoder must refuse too.
 // The second real round makes the guard satisfiable and prices resolve.
 func TestReflector_GoldenFixture_ProtocolOne(t *testing.T) {
 	t.Parallel()
@@ -301,7 +301,7 @@ func TestReflector_GoldenFixture_ProtocolOne(t *testing.T) {
 	}
 }
 
-// TestReflector_Determinism folds the fixture twice and requires byte-identical
+// TestReflector_Determinism decodes the fixture twice and requires byte-identical
 // output — the same run-twice property every other decode path holds.
 func TestReflector_Determinism(t *testing.T) {
 	t.Parallel()
@@ -312,7 +312,7 @@ func TestReflector_Determinism(t *testing.T) {
 	}
 	first, second := fold(), fold()
 	if !reflect.DeepEqual(first, second) {
-		t.Fatal("two folds of the same fixture diverged")
+		t.Fatal("two decodes of the same fixture diverged")
 	}
 	a, err := json.Marshal(first)
 	if err != nil {
@@ -323,7 +323,7 @@ func TestReflector_Determinism(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 	if string(a) != string(b) {
-		t.Fatal("two folds of the same fixture are not byte-identical")
+		t.Fatal("two decodes of the same fixture are not byte-identical")
 	}
 }
 
@@ -399,8 +399,8 @@ func TestReflector_MaxDevRejectsPerAsset(t *testing.T) {
 }
 
 // TestReflector_YieldBloxShape covers the YieldBlox aggregator semantics the
-// bronze archive cannot yet witness (its config writes fall in a not-yet-
-// ingested stretch): address-keyed asset mapping into the DEX feed, the USDC
+// archived close meta cannot yet witness (its config writes fall in a stretch
+// not yet captured): address-keyed asset mapping into the DEX feed, the USDC
 // token as base priced 1, and the two hardcoded BaseAssets priced 1. The
 // aggregator instance here is SYNTHETIC, built to mirror its live on-chain
 // instance storage; the DEX feed rounds it prices from are the real fixture
@@ -495,15 +495,15 @@ func TestReflector_YieldBloxShape(t *testing.T) {
 }
 
 // TestReflector_ConfigRecordsRestartResume drives the ConfigRecords ->
-// HydrateConfig seam: fold part of the fixture, persist the emitted records,
-// hydrate a fresh state from them, and fold the remaining ledgers on top. The
-// restarted fold must price identically to the uninterrupted one.
+// HydrateConfig seam: decode part of the fixture, persist the emitted records,
+// hydrate a fresh state from them, and decode the remaining ledgers on top. The
+// restarted decode must price identically to the uninterrupted one.
 func TestReflector_ConfigRecordsRestartResume(t *testing.T) {
 	t.Parallel()
 	ledgers := loadReflectorFixture(t)
 	adapter := newReflectorAdapter(t)
 
-	// Leg 1: fold through the second-to-last ledger, collecting records like the
+	// Leg 1: decode through the second-to-last ledger, collecting records like the
 	// host does (latest per entity key wins).
 	latest := map[string]bindings.ConfigRecord{}
 	state := fixedPoolPrior()
@@ -529,7 +529,7 @@ func TestReflector_ConfigRecordsRestartResume(t *testing.T) {
 		t.Fatalf("hydrate: %v", err)
 	}
 	if len(hydrated.OracleAggregators) == 0 {
-		t.Fatal("hydrated state carries no aggregator config — a restarted mainnet fold would never price again")
+		t.Fatal("hydrated state carries no aggregator config — a restarted mainnet decode would never price again")
 	}
 	if len(hydrated.PriceFeeds) == 0 {
 		t.Fatal("hydrated state carries no feed state")
@@ -538,14 +538,14 @@ func TestReflector_ConfigRecordsRestartResume(t *testing.T) {
 	// records in production); re-seed the pool the same way leg 1 was seeded.
 	hydrated.Pools = fixedPoolPrior().Pools
 
-	// Leg 2: fold the final ledger on the hydrated seed.
+	// Leg 2: decode the final ledger on the hydrated seed.
 	last := ledgers[len(ledgers)-1]
 	restarted, err := adapter.DecodeStateAt(hydrated, last.Changes, last.LedgerSeq, time.Unix(last.CloseTimeUnix, 0).UTC())
 	if err != nil {
 		t.Fatalf("decode ledger %d: %v", last.LedgerSeq, err)
 	}
 
-	// The uninterrupted fold over the same ledgers.
+	// The uninterrupted decode over the same ledgers.
 	straight, err := adapter.DecodeStateAt(state, last.Changes, last.LedgerSeq, time.Unix(last.CloseTimeUnix, 0).UTC())
 	if err != nil {
 		t.Fatalf("decode ledger %d: %v", last.LedgerSeq, err)
@@ -558,7 +558,7 @@ func TestReflector_ConfigRecordsRestartResume(t *testing.T) {
 			t.Errorf("asset %s after restart = %q/%d, uninterrupted = %q/%d", asset, gotPrice, gotDecimals, wantPrice, wantDecimals)
 		}
 		if wantPrice == "" {
-			t.Errorf("asset %s resolved no price in the uninterrupted fold — the comparison is vacuous", asset)
+			t.Errorf("asset %s resolved no price in the uninterrupted decode — the comparison is vacuous", asset)
 		}
 	}
 }
