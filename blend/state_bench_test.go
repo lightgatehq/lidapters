@@ -89,7 +89,7 @@ func benchPositionsChange(b *testing.B, poolID, user string, supply int64) bindi
 }
 
 // benchPrior builds a prior LedgerState carrying nUsers accumulated user
-// positions against one pool — the "600k ledgers into the sprint" shape.
+// positions against one pool — the "600k ledgers into a long run" shape.
 func benchPrior(b *testing.B, poolID string, nUsers int) *bindings.LedgerState {
 	b.Helper()
 	assetID := benchContract(b, 2)
