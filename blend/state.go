@@ -242,7 +242,7 @@ type blendStateBuilder struct {
 	// holder's own balance/emission write, its pool's PoolBalance, a linked
 	// Comet write, or a price change for its BLND/USDC legs. Per-ledger scratch
 	// like dirtyUsers; finalized into the bindings.DirtyBackstop set exposed
-	// via Adapter.LastDirtyBackstops (D-10).
+	// via Adapter.LastDirtyBackstops.
 	dirtyBackstops map[string]backstopIdentity
 	// changedFeeds / changedPriceAssets are this ledger's price-invalidation
 	// signals, recorded during apply and consumed by the backstop dirty
