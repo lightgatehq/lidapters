@@ -1,5 +1,5 @@
-// Package soroswap decodes and folds Soroswap (Uniswap-V2-style) factory and
-// pair contracts into the neutral AMM state carrier and gold shapes.
+// Package soroswap decodes Soroswap (Uniswap-V2-style) factory and pair
+// contracts into the neutral AMM state carrier and output rows.
 //
 // Soroswap is deliberately its own package, not a configuration of the
 // aquarius package: pair instance storage uses RAW u32 ScVal keys (a
@@ -18,9 +18,9 @@
 // nothing, never a fabricated zero/false), quarantine-don't-drop (an
 // unrecognized event on an owned contract is quarantined with its raw bytes,
 // never silently skipped). Recognized-but-not-carried storage: KLast (pair
-// fee-accounting internal, no gold column), Allowance entries (temporary
+// fee-accounting internal, no output field), Allowance entries (temporary
 // SEP-41 allowances, not positions), and the factory's own instance fields —
-// they decode cleanly and are intentionally not folded into state.
+// they decode cleanly and are intentionally not carried into state.
 package soroswap
 
 import (
@@ -35,13 +35,13 @@ type Config struct {
 	AdapterID string
 	Protocol  string
 	// Factories is the pair-discovery authority set: contract ids whose
-	// PairAddressesNIndexed(u32) writes register pairs into the fold.
+	// PairAddressesNIndexed(u32) writes register pairs for decoding.
 	Factories map[string]struct{}
 	// Routers emit convenience-op events only (init/add/remove/swap); they are
 	// owned so their events are recognized, never quarantined, never activities.
 	Routers map[string]struct{}
 	// PairWasmHashes is an optional allow-list (lowercase hex). When non-empty,
-	// a pair instance whose executable is not listed does not fold.
+	// a pair instance whose executable is not listed is not decoded.
 	PairWasmHashes map[string]struct{}
 }
 
@@ -119,8 +119,9 @@ func (a *Adapter) OwnsContract(id string) bool {
 	return ok
 }
 
-// RegisterPairContracts seeds pairs known ahead of the fold (e.g. a curated
-// verification set); in-fold discovery from the factory registry adds the rest.
+// RegisterPairContracts seeds pairs known ahead of decoding (e.g. a curated
+// verification set); discovery from the factory registry during decoding adds
+// the rest.
 func (a *Adapter) RegisterPairContracts(ids ...string) {
 	for _, id := range ids {
 		if strings.TrimSpace(id) != "" {
@@ -179,8 +180,8 @@ func (a *Adapter) StateStats(s *bindings.LedgerState) bindings.StateStats {
 }
 
 // LastDirtyPositions reports the (address, pair) LP balances the most recent
-// DecodeState call touched. Same single-fold-at-a-time contract as the
-// interface documents: read immediately after folding.
+// DecodeState call touched. Same single-decode-at-a-time contract as the
+// interface documents: read immediately after decoding.
 func (a *Adapter) LastDirtyPositions() []bindings.DirtyPosition {
 	return a.dirty
 }
