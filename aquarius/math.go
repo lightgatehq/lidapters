@@ -68,7 +68,7 @@ const maxTick = 887272
 // tickSqrtPriceX96 converts a tick to its Q64.96 square-root price — the
 // bounds rangePrincipal consumes. Concentrated Position entries key on
 // (owner, tick_lower, tick_upper); their sqrt-price bounds are never stored
-// on-chain, so the fold derives them here. Anchor: tick -17652 yields
+// on-chain, so the adapter derives them here. Anchor: tick -17652 yields
 // 32778602836627082880087502758, which brackets the pinned pool's observed
 // Slot0.sqrt_price_x96 = 32779403528916036142219842285 from below.
 func tickSqrtPriceX96(tick int32) (string, error) {
@@ -110,7 +110,7 @@ func parseUint(s string) (*big.Int, error) {
 }
 func mulDivFloor(a, b, d *big.Int) *big.Int { return new(big.Int).Quo(new(big.Int).Mul(a, b), d) }
 
-// pendingReward reproduces the pool's get_user_reward getter from folded
+// pendingReward reproduces the pool's get_user_reward getter from decoded
 // checkpoint state (classic pools): the contract checkpoints to_claim and the
 // pool's accumulated total into UserRewardData on every user interaction, and
 // accrues tps per second to the pool between interactions, capped at the
@@ -200,7 +200,7 @@ func proRata(shares, reserve, total string) (string, error) {
 }
 
 // rangePrincipal applies burn/withdraw rounding (down) to Q96 square-root
-// prices. Bounds are supplied by the audited tick-math decoder.
+// prices. Bounds are supplied by tickSqrtPriceX96.
 func rangePrincipal(liquidity, p, pa, pb string) (string, string, error) {
 	L, e := parseUint(liquidity)
 	if e != nil {
