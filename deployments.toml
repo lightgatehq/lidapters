@@ -158,4 +158,3 @@ role = "fxdao_vaults"
 deploy_ledger = 51835681
 source = "stellar.expert exact close-time match (HIGH); create_contract ledger"
 notes = "FxDAO vaults, create 2024-05-26 04:14:28 UTC. Storage entries at head: 1 (every vault entry deleted - finished history). THE PROTOCOL FLOOR: a full-history decode starts here."
-
