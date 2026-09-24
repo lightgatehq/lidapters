@@ -5,7 +5,7 @@ package aquarius
 // (lidapters#33): a Go zero value must never masquerade as an observed
 // on-chain zero. Shares: "" (never observed) is distinct from "0" (observed
 // close). Ticks: a concentrated Position key without decodable bounds must
-// refuse to fold rather than collide onto a guessed (0, 0) range, and the
+// refuse to decode rather than collide onto a guessed (0, 0) range, and the
 // refusal must be loud (a decode diagnostic), never a silent drop.
 
 import (
@@ -76,7 +76,7 @@ func entryWrite(t *testing.T, contractID string, key, val xdr.ScVal) bindings.Co
 
 // TestConcentratedPositionWithoutTickBoundsRefusesLoudly is the aquarius
 // analogue of the #33 rule: refuse, don't guess. A Position entry whose key
-// carries no (tick_lower, tick_upper) never folds — a guessed (0, 0) range
+// carries no (tick_lower, tick_upper) never decodes — a guessed (0, 0) range
 // would collide distinct ranges of one owner — and the refusal surfaces as a
 // decode diagnostic.
 func TestConcentratedPositionWithoutTickBoundsRefusesLoudly(t *testing.T) {
@@ -111,13 +111,13 @@ func TestConcentratedPositionWithoutTickBoundsRefusesLoudly(t *testing.T) {
 	if diags[0].PoolContractID != "pool" || diags[0].LedgerSeq != 100 {
 		t.Fatalf("diagnostic coordinates %#v", diags[0])
 	}
-	// The next fold overwrites the diagnostics, mirroring the provider
+	// The next decode pass overwrites the diagnostics, mirroring the provider
 	// contract.
 	if _, err := a.DecodeState(state, nil, 101); err != nil {
 		t.Fatal(err)
 	}
 	if len(a.LastDecodeDiagnostics()) != 0 {
-		t.Fatal("diagnostics must reflect the most recent fold only")
+		t.Fatal("diagnostics must reflect the most recent decode pass only")
 	}
 }
 
@@ -173,7 +173,7 @@ func TestMidRampAmplificationIsAbsent(t *testing.T) {
 }
 
 // TestSharesAbsentIsNotZero pins the transform's share semantics: "" (never
-// observed in the folded window) emits nothing regardless of lifecycle,
+// observed in the decoded window) emits nothing regardless of lifecycle,
 // while an observed "0" emits close tombstones only for a position that
 // actually held shares.
 func TestSharesAbsentIsNotZero(t *testing.T) {
