@@ -1,5 +1,5 @@
 // Package discovery is event-based Blend pool discovery. It lives in the
-// protocol adapter's tree rather than the relay core, so a protocol stays
+// protocol adapter's tree rather than in the caller, so a protocol stays
 // self-contained: event decode, state decode, transform, and pool enumeration
 // all ship with the adapter. It is free functions with no Adapter coupling.
 //
@@ -7,10 +7,10 @@
 // read the factory's *instance storage*: on mainnet the PoolFactoryV2 records
 // each deployed pool as a SEPARATE persistent ledger entry keyed
 // PoolFactoryDataKey::Contracts(<pool address>) — the instance entry holds none
-// of them, so an instance-storage read finds nothing (the mainnet decode gap).
+// of them, so an instance-storage read finds nothing on mainnet.
 // The one signal emitted on every deployment, on both testnet and mainnet, is
 // the factory's `deploy` CONTRACT EVENT, whose value is the new pool address.
-// So enumeration is event-based: scan a ledger's bronze raw close-meta for
+// So enumeration is event-based: scan a ledger's raw close-meta for
 // PoolFactory `deploy` events and collect their pool addresses.
 package discovery
 
@@ -46,9 +46,9 @@ type DiscoveredPool struct {
 // factory's instance storage, so it works on BOTH testnet and mainnet (see the
 // package comment for why instance-storage reads miss mainnet pools).
 //
-// rawMeta is the bronze raw_ledgers.raw_meta for one ledger. It reads contract
-// events straight out of the per-transaction apply meta — no network passphrase,
-// no RPC, no transaction-envelope pairing — so it stays a pure function of its
+// rawMeta is one ledger's XDR-encoded LedgerCloseMeta. It reads contract events
+// straight out of the per-transaction apply meta — no network passphrase, no
+// RPC, no transaction-envelope pairing — so it stays a pure function of its
 // inputs. The result is deduplicated and sorted by pool address so repeated
 // scans of the same meta are byte-identical. An empty factory set returns no
 // pools (there is nothing to attribute a deploy to).
@@ -64,8 +64,9 @@ func DiscoverPoolsFromMeta(rawMeta []byte, factoryIDs map[string]struct{}) ([]Di
 	return DiscoverPoolsFromLedgerCloseMeta(lcm, factoryIDs)
 }
 
-// DiscoverPoolsFromLedgerCloseMeta is the decoded-input form used by relay's
-// predecode pipeline. It keeps discovery pure while avoiding a second XDR decode.
+// DiscoverPoolsFromLedgerCloseMeta is the decoded-input form, for a caller that
+// has already decoded the LedgerCloseMeta. It keeps discovery pure while
+// avoiding a second XDR decode.
 func DiscoverPoolsFromLedgerCloseMeta(lcm xdr.LedgerCloseMeta, factoryIDs map[string]struct{}) ([]DiscoveredPool, error) {
 	if len(factoryIDs) == 0 {
 		return nil, nil
@@ -100,11 +101,11 @@ func DiscoverPoolsFromLedgerCloseMeta(lcm xdr.LedgerCloseMeta, factoryIDs map[st
 }
 
 // contractEventsFromMeta returns the contract events a transaction emitted,
-// across the two meta layouts a Blend bronze scan encounters: TransactionMetaV3
+// across the two meta layouts a Blend ledger scan encounters: TransactionMetaV3
 // (protocol 20–22) keeps them under SorobanMeta.Events, while TransactionMetaV4
 // (protocol 23+ unified events, CAP-67) moves them into per-operation Events. A
-// backfill from a mainnet deploy floor spans both, so both are handled; classic
-// pre-Soroban meta (V1/V2) carries no contract events.
+// scan from a mainnet deploy floor to the present spans both, so both are
+// handled; classic pre-Soroban meta (V1/V2) carries no contract events.
 func contractEventsFromMeta(meta xdr.TransactionMeta) []xdr.ContractEvent {
 	switch meta.V {
 	case 3:

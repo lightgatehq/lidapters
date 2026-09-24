@@ -39,8 +39,8 @@ func (a *Adapter) Transform(in bindings.TransformInput) (*bindings.TransformOutp
 	for _, pos := range in.State.AMMPositions {
 		pool, ok := pools[pos.PoolContractID]
 		if !ok {
-			// A position whose pool never folded (bounded replay without the
-			// pool's instance write or seed) cannot be decomposed — but it
+			// A position whose pool was never decoded (decoding started after the pool's
+			// instance write, and no seed was supplied) cannot be decomposed — but it
 			// must not vanish silently. Quarantine, don't drop.
 			out.Quarantine = append(out.Quarantine, bindings.QuarantineEvent{ID: stableID(a.ID(), pos.PoolContractID, pos.Address, in.LedgerSeq), AdapterID: a.ID(), LedgerSeq: in.LedgerSeq, ContractID: pos.PoolContractID, Reason: "aquarius_position_unknown_pool"})
 			continue
@@ -118,15 +118,13 @@ func appendRangeComponents(out *bindings.TransformOutput, group string, p bindin
 	}
 }
 
-// eventEra is one row of the per-wasm event-era table: whether the exact
-// event name is a served activity, and the first ledger the name was observed
-// on-chain for its contract class. The tables below mirror the deployment
-// data in relay.rs deployments/aquarius.pubnet.toml character-exactly — the
-// single source of truth shared by the relay wing, this package and the
-// serving layer. The vocabulary only ever GREW across wasm upgrades, so one
-// floor per (class, name) is a faithful era encoding. A name outside its
-// class's table, or seen before its floor, quarantines loudly: the fix is a
-// new table row (data), never a keyword match (code).
+// eventEra is one row of the per-wasm event-era table: whether the exact event
+// name is a served activity, and the first ledger the name was observed
+// on-chain for its contract class. Names are matched character-exactly. The
+// vocabulary only ever GREW across wasm upgrades, so one floor per (class,
+// name) is a faithful era encoding. A name outside its class's table, or seen
+// before its floor, quarantines loudly: the fix is a new table row (data),
+// never a keyword match (code).
 type eventEra struct {
 	activity   bool
 	fromLedger int64

@@ -1,5 +1,5 @@
-// Comet LP (BToken) state folding: the deterministic, fold-owned decode of the
-// Comet pool contract behind each Blend backstop (lidapters#31, V1-09 D-02/D-03).
+// Comet LP (BToken) state decoding: the deterministic decode of the
+// Comet pool contract behind each Blend backstop (lidapters#31).
 //
 // The layout is pinned to CometDEX/comet-contracts-v1 @ ef4cbfad0a35202ad267c14d163d2f362995a8d3
 // (contracts/src/c_pool/storage_types.rs): three SEPARATE persistent entries
@@ -16,7 +16,7 @@
 // pool state must never decode as Comet — ownership is by configured contract
 // address, never by key shape.
 //
-// Absent-not-zero (D-09): a key that has never folded leaves its facet absent
+// Absent-not-zero: a key that has never been decoded leaves its facet absent
 // ("" / nil), a real stored zero stays "0", and a malformed write is rejected
 // whole (the carried state survives) rather than half-decoded. Component
 // identity is matched by token address only — AllTokenVec order and
@@ -33,26 +33,26 @@ import (
 	"github.com/stellar/go-stellar-sdk/xdr"
 )
 
-// cometPoolType is the AMMPoolState.PoolType marker for a folded Comet pool, so
-// generic AMM state carries Comet data without being confusable with an
-// Aquarius constant_product/stable/concentrated pool (D-03).
+// cometPoolType is the AMMPoolState.PoolType marker for a decoded Comet pool,
+// so generic AMM state carries Comet data without being confusable with an
+// Aquarius constant_product/stable/concentrated pool.
 const cometPoolType = "comet"
 
 // cometPoolBuilder accumulates one registered Comet contract's decoded facets.
-// Each facet tracks its own known-ness: the fold can observe TotalShares before
-// AllRecordData (or never), and each must round-trip independently.
+// Each facet tracks its own known-ness: the decoder can observe TotalShares
+// before AllRecordData (or never), and each must round-trip independently.
 type cometPoolBuilder struct {
 	contractID string
 	wasmHash   string
 	// tokens is the decoded AllTokenVec (order preserved from the wire, never
-	// matched on). tokenKnown distinguishes "vec folded, empty" from "vec never
+	// matched on). tokenKnown distinguishes "vec decoded, empty" from "vec never
 	// observed".
 	tokens     []string
 	tokenKnown bool
 	// records is the decoded AllRecordData, keyed by token address. Record
 	// weight/scalar/index are validated present on decode (a wrong or partial
 	// layout rejects the write) but only balance feeds valuation; the index is
-	// not carried into output state (no V1-09 consumer — see PR notes).
+	// not carried into output state (nothing reads it yet).
 	records      map[string]cometRecord
 	recordsKnown bool
 	// totalSharesRaw is TotalShares verbatim; "" when never observed, "0" for a
@@ -66,9 +66,9 @@ type cometRecord struct {
 	index      int32
 }
 
-// reserveOf returns the token's folded Comet reserve (Record.balance), "" when
-// the record map never folded or the token is absent from it. A present zero
-// balance stays "0" — an observed zero, not an absence.
+// reserveOf returns the token's decoded Comet reserve (Record.balance), "" when
+// the record map was never decoded or the token is absent from it. A present
+// zero balance stays "0" — an observed zero, not an absence.
 func (c *cometPoolBuilder) reserveOf(assetID string) string {
 	if assetID == "" || !c.recordsKnown {
 		return ""
@@ -80,9 +80,9 @@ func (c *cometPoolBuilder) reserveOf(assetID string) string {
 	return record.balanceRaw
 }
 
-// lpSupplyRaw returns the folded LP supply denominator, "" when TotalShares
-// never folded. A real stored zero stays "0" — present, but unusable as a
-// denominator downstream (D-09: absent derived output, not silent zero).
+// lpSupplyRaw returns the decoded LP supply denominator, "" when TotalShares
+// was never decoded. A real stored zero stays "0" — present, but unusable as a
+// denominator downstream (absent derived output, not silent zero).
 func (c *cometPoolBuilder) lpSupplyRaw() string {
 	if !c.totalSharesKnown {
 		return ""
@@ -102,7 +102,7 @@ func (b *blendStateBuilder) ensureComet(contractID string) *cometPoolBuilder {
 	return comet
 }
 
-// applyCometChange folds one live contract_data change on a registered Comet
+// applyCometChange applies one live contract_data change on a registered Comet
 // contract. Routed from apply() ahead of every Blend branch, so a Comet
 // instance (which carries a wasm executable) can never be misdecoded as a
 // phantom Blend pool.
@@ -260,7 +260,7 @@ func (b *blendStateBuilder) restoreComet(state bindings.AMMPoolState) {
 				comet.recordsKnown = true
 			}
 		}
-		// A folded vec with a folded-but-empty record map round-trips as tokens
+		// A decoded vec with a decoded-but-empty record map round-trips as tokens
 		// with empty reserves; mark the map known only when the carrier proves
 		// it (a non-empty reserve). The empty-map/empty-vec case is
 		// economically identical — no reserve can value — so the distinction is
@@ -275,11 +275,11 @@ func (b *blendStateBuilder) restoreComet(state bindings.AMMPoolState) {
 	}
 }
 
-// buildAMMPools snapshots the folded Comet pools into the protocol-neutral
+// buildAMMPools snapshots the decoded Comet pools into the protocol-neutral
 // carrier, sorted by contract ID with tokens sorted by address so the run-twice
 // and cross-strategy output is byte-identical. Records whose address fell out
 // of the token vec (an unbind observed between the two writes) still emit —
-// dropping them would lose a reserve the fold observed.
+// dropping them would lose a reserve the decoder observed.
 func (b *blendStateBuilder) buildAMMPools() []bindings.AMMPoolState {
 	if len(b.comets) == 0 {
 		return nil
@@ -330,7 +330,7 @@ func (b *blendStateBuilder) buildAMMPools() []bindings.AMMPoolState {
 
 // backstopInstanceForPool resolves a pool's backstop contract to its decoded
 // instance (the BToken/BLND/USDC identity carrier), nil when either half has
-// not folded.
+// not been decoded.
 func (b *blendStateBuilder) backstopInstanceForPool(poolContract string) *contracts.BackstopInstanceState {
 	pool := b.pools[poolContract]
 	if pool == nil || pool.state.BackstopContract == "" {
@@ -339,8 +339,8 @@ func (b *blendStateBuilder) backstopInstanceForPool(poolContract string) *contra
 	return b.backstopInstances[pool.state.BackstopContract]
 }
 
-// cometForBackstopInstance resolves the folded Comet pool behind a backstop
-// instance's BToken, nil when the token is unregistered or unfoldable.
+// cometForBackstopInstance resolves the decoded Comet pool behind a backstop
+// instance's BToken, nil when the token is unregistered or not yet decoded.
 func (b *blendStateBuilder) cometForBackstopInstance(instance *contracts.BackstopInstanceState) *cometPoolBuilder {
 	if instance == nil || instance.BackstopToken == "" {
 		return nil
@@ -348,15 +348,15 @@ func (b *blendStateBuilder) cometForBackstopInstance(instance *contracts.Backsto
 	return b.comets[instance.BackstopToken]
 }
 
-// tokenPriceUSD binds one token contract ID to its folded USD price: the first
+// tokenPriceUSD binds one token contract ID to its decoded USD price: the first
 // pool reserve (in ascending pool-contract order, so the binding is
 // deterministic) whose asset IS that token and whose oracle resolved a positive
 // price this ledger. resolveOraclePrices/resolveAggregatorPrices have already
 // run when build/snapshot calls this, so the price is ledger-pinned to the same
 // committed LedgerState.Ledger as every other valuation input. There is no
-// fallback: an unbound token (no folded reserve, no positive price) returns ""
+// fallback: an unbound token (no decoded reserve, no positive price) returns ""
 // and every derived USD stays absent — never a hardcoded $1, never a stale or
-// cross-ledger substitute (D-09).
+// cross-ledger substitute.
 func (b *blendStateBuilder) tokenPriceUSD(assetID string) string {
 	if assetID == "" {
 		return ""
@@ -377,10 +377,10 @@ func (b *blendStateBuilder) tokenPriceUSD(assetID string) string {
 	return ""
 }
 
-// --- affected-holder dirty set (D-10) -----------------------------------------
+// --- affected-holder dirty set -----------------------------------------------
 
 // markBackstopDirty records one (address, pool) backstop pair as invalidated
-// this ledger. Kind is derived at finalize time from post-fold presence, the
+// this ledger. Kind is derived at finalize time from post-decode presence, the
 // same rule finalizeDirtyPositions applies to lending pairs.
 func (b *blendStateBuilder) markBackstopDirty(address, poolContract string) {
 	if b.dirtyBackstops == nil {
@@ -401,7 +401,7 @@ func (b *blendStateBuilder) markBackstopPoolDirty(poolContract string) {
 
 // markCometDirty invalidates every backstop holder linked to one Comet: the
 // pools whose backstop instance names this contract as its BToken. A Comet
-// reserve/supply write legitimately touches every linked holder (D-10); it
+// reserve/supply write legitimately touches every linked holder; it
 // must not touch any lending position.
 func (b *blendStateBuilder) markCometDirty(cometContract string) {
 	for _, pool := range b.pools {
@@ -435,7 +435,7 @@ func (b *blendStateBuilder) markPriceAssetDirty(assetID string) {
 // propagateFeedPriceDirty maps this ledger's changed feeds through each
 // aggregator's asset->feed wiring and invalidates the backstop holders priced
 // by them. Aggregator prices are synthesized at build time, so the apply pass
-// sees the feed write, not the price; this is the fold-time join between the
+// sees the feed write, not the price; this is the decode-time join between the
 // two.
 func (b *blendStateBuilder) propagateFeedPriceDirty() {
 	if len(b.changedFeeds) == 0 {
@@ -461,7 +461,7 @@ func (b *blendStateBuilder) propagateFeedPriceDirty() {
 // finalizeDirtyBackstops turns the builder's raw backstop dirty set into the
 // exposed bindings.DirtyBackstop list, sorted by (address, pool) for
 // byte-stable output. Kind mirrors finalizeDirtyPositions: present after the
-// fold is an Upsert, purged is a Removal.
+// decode is an Upsert, purged is a Removal.
 func finalizeDirtyBackstops(dirty map[string]backstopIdentity, balances map[string]backstopUserBalance) []bindings.DirtyBackstop {
 	if len(dirty) == 0 {
 		return nil

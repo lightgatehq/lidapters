@@ -1,11 +1,11 @@
-// Package fxdao decodes and folds the FxDAO vaults contract into the neutral
-// vault state carrier and gold shapes. FXDAO is a SNAPSHOT-ONLY surface: the
-// vaults contract emits zero contract events by design (no publish call
-// anywhere in its source), so this adapter registers NO activity vocabulary —
-// there is no activity surface to emit. Vault state folds from contract_data
-// deltas only, and ANY event arriving on an owned contract is quarantined as
-// an anomaly (something the source says cannot happen), never classified,
-// never dropped.
+// Package fxdao decodes the FxDAO vaults contract into the neutral vault state
+// carrier and output rows. FXDAO is a SNAPSHOT-ONLY surface: the vaults
+// contract emits zero contract events by design (no publish call anywhere in
+// its source), so this adapter registers NO activity vocabulary — there is no
+// activity surface to emit. Vault state is decoded from contract_data deltas
+// only, and ANY event arriving on an owned contract is quarantined as an
+// anomaly (something the source says cannot happen), never classified, never
+// dropped.
 //
 // Storage layout, derived from the pinned protocol sources (FxDAO/FxDAO-SC
 // @ b73d8b6, contracts/vaults/src/storage/vaults.rs unless noted):
@@ -110,8 +110,8 @@ func (a *Adapter) RegisterContracts(ids ...string) {
 
 // LastDirtyVaults reports the (account, denomination) vaults the most recent
 // DecodeState call touched, and whether each was an upsert or a genuine
-// on-chain removal. Same single-fold-at-a-time contract as
-// bindings.DirtyPositionsProvider: read immediately after folding.
+// on-chain removal. Same single-decode-at-a-time contract as
+// bindings.DirtyPositionsProvider: read immediately after decoding.
 func (a *Adapter) LastDirtyVaults() []DirtyVault {
 	return a.dirty
 }

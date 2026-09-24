@@ -14,12 +14,13 @@ import (
 )
 
 // diagMissingTickBounds marks a concentrated Position entry whose key lacked
-// decodable (tick_lower, tick_upper) bounds: the fold refuses to key it as a
+// decodable (tick_lower, tick_upper) bounds: the decoder refuses to key it as a
 // guessed (0, 0) range and surfaces the refusal instead (absent is not zero).
 const diagMissingTickBounds = "aquarius_position_missing_tick_bounds"
 
-// DecodeState is a pure delta fold. JSON values are supported for audited
-// fixtures; production entries are decoded from ScVal XDR maps/vectors.
+// DecodeState is a pure reducer over per-ledger deltas. JSON values are
+// supported for test fixtures; production entries are decoded from ScVal XDR
+// maps/vectors.
 func (a *Adapter) DecodeState(prior *bindings.LedgerState, changes []bindings.ContractDataChange, ledgerSeq int64) (*bindings.LedgerState, error) {
 	next := cloneState(prior)
 	a.diagnostics = nil
@@ -48,7 +49,7 @@ func (a *Adapter) DecodeState(prior *bindings.LedgerState, changes []bindings.Co
 		name := strings.ToLower(symbolOrFirst(key))
 		if poolID, isShare := a.shareTokens[c.ContractID]; isShare {
 			// LP position state rides Balance writes on the pool's share
-			// token; the balance folds as a position of the owning pool.
+			// token; the balance is recorded as a position of the owning pool.
 			if name == "balance" {
 				if owner := addrInKey(key); owner != "" {
 					if shares := firstUint(val); shares != "" {
@@ -181,7 +182,7 @@ func (a *Adapter) DecodeState(prior *bindings.LedgerState, changes []bindings.Co
 			if !ok {
 				if symbolOrFirst(key) == "Position" && pos.Address != "" {
 					// A range Position key whose (tick_lower, tick_upper)
-					// bounds did not decode must never fold as a guessed
+					// bounds did not decode must never be stored as a guessed
 					// (0, 0) range — absent is not zero. Refuse the entry
 					// and surface the refusal.
 					a.diagnostics = append(a.diagnostics, bindings.DecodeDiagnostic{
@@ -258,12 +259,12 @@ func (a *Adapter) DecodeState(prior *bindings.LedgerState, changes []bindings.Co
 	return next, nil
 }
 
-// applyPoolSeeds folds each configured pool seed into the working maps as a
+// applyPoolSeeds merges each configured pool seed into the working maps as a
 // gap-fill floor: a pool/position absent from state (its instance entry
-// predates the folded window) is inserted from the seed, and individual empty
-// fields on a present pool are filled from the seed. Values the fold already
-// observed from the chain are never overridden. Runs before each ledger's
-// change loop, so chain writes in-window always supersede the seed.
+// predates the decoded ledger range) is inserted from the seed, and individual
+// empty fields on a present pool are filled from the seed. Values the decoder
+// already observed from the chain are never overridden. Runs before each
+// ledger's change loop, so chain writes in-window always supersede the seed.
 func (a *Adapter) applyPoolSeeds(pools map[string]bindings.AMMPoolState, positions map[string]bindings.AMMPositionState) {
 	for _, seed := range a.cfg.PoolSeeds {
 		if strings.TrimSpace(seed.ContractID) == "" {
@@ -330,7 +331,7 @@ func (a *Adapter) applyPoolSeeds(pools map[string]bindings.AMMPoolState, positio
 	}
 }
 
-// applyEntryRemoval folds an entry deletion/eviction/expiry. Only an
+// applyEntryRemoval applies an entry deletion/eviction/expiry. Only an
 // instance-level removal tears the whole pool down; a removed per-user entry
 // closes exactly that user's leg. A Balance/Position entry is deleted on full
 // exit, so its position zeroes (HadShares survives, letting Transform emit
@@ -388,8 +389,8 @@ func (a *Adapter) applyEntryRemoval(c bindings.ContractDataChange, pools map[str
 	}
 }
 
-// upsertClassicShares folds a share-balance write into the classic (untick'd)
-// position for (pool, owner), preserving previously folded reward state.
+// upsertClassicShares merges a share-balance write into the classic (untick'd)
+// position for (pool, owner), preserving previously decoded reward state.
 func upsertClassicShares(positions map[string]bindings.AMMPositionState, poolID, owner, shares string) {
 	pos := bindings.AMMPositionState{Address: owner, PoolContractID: poolID}
 	k := positionKey(pos)
@@ -577,7 +578,7 @@ func decodeReserves(old []bindings.AMMTokenReserve, v xdr.ScVal) []bindings.AMMT
 	out := make([]bindings.AMMTokenReserve, 0, len(*vec))
 	for i, x := range *vec {
 		// Tokens (address vec) and Reserves (uint vec) are separate storage
-		// entries folded in either order; each pass fills its own column and
+		// entries decoded in either order; each pass fills its own column and
 		// preserves the other's.
 		r := bindings.AMMTokenReserve{}
 		if i < len(old) {
@@ -628,10 +629,10 @@ func decodePosition(pool string, key, val xdr.ScVal) (bindings.AMMPositionState,
 	p.PendingFee0Raw = firstUint(f["tokens_owed_0"])
 	p.PendingFee1Raw = firstUint(f["tokens_owed_1"])
 	if symbolOrFirst(key) == "Position" {
-		// Concentrated ranges key on (owner, tick_lower, tick_upper) — the
-		// bounds live in the entry KEY, not the value (D-05 keying). A
-		// Position key without both bounds must not fold: a guessed (0, 0)
-		// range would collide distinct ranges of one owner.
+		// Concentrated ranges key on (owner, tick_lower, tick_upper) — the bounds
+		// live in the entry KEY, not the value, so the position is keyed on all
+		// three. A Position key without both bounds must not be stored: a
+		// guessed (0, 0) range would collide distinct ranges of one owner.
 		lo, hi, ok := ticksInKey(key)
 		if !ok {
 			return p, false

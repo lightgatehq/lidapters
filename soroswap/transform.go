@@ -14,10 +14,9 @@ import (
 
 // The activity vocabulary is the complete pair event set from the pinned
 // protocol sources (contracts/pair/src/event.rs:33,64,98,115,133 @ bb90a65),
-// stored under the EXACT on-chain event names. It must stay equal to the
-// frozen gold CHECK constraint (soroswap_activities.activity_type in
-// docs/gold-ddl/020_soroswap_gold.sql); additions there are a numbered
-// follow-up migration, never an edit.
+// stored under the EXACT on-chain event names. A consumer that constrains the
+// stored activity type must allow at least this set; extend that constraint
+// with a new migration rather than editing an applied one.
 var pairActivityVocabulary = map[string]struct{}{
 	"deposit":  {},
 	"swap":     {},
@@ -191,7 +190,7 @@ func (a *Adapter) classifyEvent(evt bindings.RawEventEnvelope) (*bindings.Activi
 	return nil, a.quarantine(evt, "soroswap_unknown_event")
 }
 
-// pairActivity builds the gold activity row for one pair event. Payloads are
+// pairActivity builds the output activity row for one pair event. Payloads are
 // #[contracttype] structs (symbol-keyed maps). Every pair event is
 // multi-legged (per-token amounts), so asset_id/amount stay absent and the
 // ordered legs ride in metadata — never a fabricated aggregate. deposit /

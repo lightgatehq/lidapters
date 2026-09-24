@@ -22,7 +22,7 @@ func stableID(parts ...any) string {
 	return hex.EncodeToString(s[:])
 }
 
-// Transform folds vault state into gold snapshot rows. State only: this
+// Transform turns vault state into snapshot rows. State only: this
 // adapter has no activity path — the vaults contract emits zero events by
 // design, so any event that DOES arrive on an owned contract is an anomaly
 // and is quarantined with its raw bytes (never classified, never dropped).

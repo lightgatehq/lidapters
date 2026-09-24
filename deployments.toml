@@ -1,13 +1,14 @@
 # deployments.toml — canonical deploy-ledger pins (Blend, Aquarius, Soroswap, FxDAO).
 #
 # A contract's "deploy ledger" is the ledger its instance was created in. It is
-# IMMUTABLE. The relay pins it to floor the in-process fold low enough to capture
-# the contract's bootstrap Sets (reserve-config + initial oracle prices).
+# IMMUTABLE. A consumer that starts decoding at this ledger captures the
+# contract's bootstrap writes (reserve config + initial oracle prices); starting
+# any later misses them.
 #
 # This file is canonical, hand-curated data — the single source of truth. Treat
 # it as such: every `deploy_ledger` must be a verified value, ESPECIALLY for
-# mainnet (public). Do NOT guess. Derive candidates with the scratchpad tool
-# `scratchpad/deploy-ledger/deploy-ledger.sh`, then hand-curate the result here.
+# mainnet (public). Do NOT guess. Derive a candidate by matching the contract's
+# creation time on stellar.expert to a ledger close time, then verify it here.
 #
 # Omit `deploy_ledger` for an uncurated row — the loader reports it as (0, false).
 #
@@ -23,8 +24,9 @@
 # --- testnet (verified — exact create_contract ledgers) --------------------
 # The floor MUST be the create_contract ledger: the oracle INSTANCE entry
 # (asset->price-index) is written at deploy and is not re-emitted later. Flooring
-# at the old SHELLBOOK approximation 3294000 would miss that Set on a cold
-# backfill -> null HF/USD. Pin the exact create ledgers instead.
+# at an earlier approximation, 3294000, misses that write when decoding starts
+# from empty state -> null health factor / USD values. Pin the exact create
+# ledgers instead.
 
 [[pin]]
 network = "testnet"
@@ -32,7 +34,7 @@ contract_id = "CANNO5MLDIANFGZBIFUAYLY2GZLMJOVQKIGBEGWYWQRCRR3QYKEKJAXU"
 role = "pool"
 deploy_ledger = 3289010
 source = "stellar.expert exact close-time match (HIGH); create_contract ledger"
-notes = "Blend testnet pool, deploy 2026-06-26 07:32:58 UTC. Exact create_contract ledger 3289010 (replaces the 3294000 SHELLBOOK bootstrap approximation). Create-ledger is the correct fold floor because the instance entry is written at deploy and never re-emitted."
+notes = "Blend testnet pool, deploy 2026-06-26 07:32:58 UTC. Exact create_contract ledger 3289010 (replaces an earlier approximation, 3294000). Create-ledger is the correct starting ledger because the instance entry is written at deploy and never re-emitted."
 
 [[pin]]
 network = "testnet"
@@ -40,7 +42,7 @@ contract_id = "CCSXSQDUZLCRIGRWLCYK3F547PLBGSFTUVJRQCIXRO2ZDI3VIZKN3NH2"
 role = "oracle"
 deploy_ledger = 3288990
 source = "stellar.expert exact close-time match (HIGH); create_contract ledger"
-notes = "Blend testnet oracle, deploy 2026-06-26 07:31:18 UTC. Exact create_contract ledger 3288990 (replaces the 3294000 SHELLBOOK bootstrap approximation). The oracle instance (asset->index) is written here and not re-emitted at 3294000, so 3288990 is the correct floor to avoid null HF."
+notes = "Blend testnet oracle, deploy 2026-06-26 07:31:18 UTC. Exact create_contract ledger 3288990 (replaces an earlier approximation, 3294000). The oracle instance (asset->index) is written here and not re-emitted at 3294000, so 3288990 is the correct floor to avoid null HF."
 
 # --- public / mainnet (verified — exact create_contract ledgers) -----------
 
@@ -50,11 +52,12 @@ contract_id = "CBQDHNBFBZYE4MKPWBSJOPIYLW4SFSXAXUTSXJN76GNKYVYPCKWC6QUK"
 role = "aquarius_router"
 source = "Aquarius documentation; deploy ledger not yet curated"
 notes = "Canonical public Aquarius AMM router. Deliberately unpinned and fail-closed until its exact create_contract ledger is verified."
-# Resolved via scratchpad/deploy-ledger, exact Stellar-Expert close-time match
-# (HIGH). deploy = create_contract ledger = where the oracle INSTANCE entry
-# (asset->index) is written = the correct, safe ingest floor for Cause B.
-# relay.yaml (mainnet, relay repo) does not consume these yet; a future mainnet
-# run config should copy these pins from this canonical table.
+# Resolved by exact stellar.expert close-time match (HIGH). deploy =
+# create_contract ledger = where the oracle INSTANCE entry (asset->index) is
+# written = the latest start guaranteed to see that write; a later start sees
+# the map only if an admin call rewrites the instance afterwards. Consumers
+# should read these pins from this table rather than copying them into their
+# own configuration.
 
 [[pin]]
 network = "public"
@@ -91,12 +94,13 @@ notes = "FixedV2 pool, create_contract 2025-04-14 17:46:46 UTC."
 # --- public / mainnet Reflector price feeds ---------------------------------
 # The pools' registered oracles above are oracle-aggregator VIEW contracts:
 # they never write a price on-ledger. The actual price writes live in these
-# Reflector feeds, registered with the relay as price_feeds. Their 2024 create
-# ledgers do NOT gate the ingest floor: the feeds re-publish every 300 s and
-# rewrite their instance (asset list + last_timestamp) in the same transaction,
-# so any fold window is fully configured within one round of its floor. The
-# floor-critical pins remain the aggregators' create ledgers above (the
-# aggregator config is the write the fold cannot recover otherwise).
+# Reflector feeds, which a consumer registers with the adapter as price feeds.
+# Their 2024 create ledgers do NOT gate the starting ledger: the feeds
+# re-publish every 300 s and rewrite their instance (asset list +
+# last_timestamp) in the same transaction, so decoding from any starting ledger
+# is fully configured within one round. The pins that gate the starting ledger
+# remain the aggregators' create ledgers above (the aggregator config is the
+# write that cannot be recovered otherwise).
 
 [[pin]]
 network = "public"
@@ -120,7 +124,7 @@ notes = "Reflector 'Stellar Mainnet DEX' feed (created 2024-03-04), base USDC to
 # checked 2026-08-01). Deploy ledgers pinned by exact stellar.expert
 # close-time match (delta 0). The factory is the pair-discovery authority:
 # pairs deploy permissionlessly and register as PairAddressesNIndexed(u32)
-# persistent writes (209 at head), so a full-history fold floors here.
+# persistent writes (209 at head), so a full-history decode starts here.
 
 [[pin]]
 network = "public"
@@ -143,10 +147,10 @@ notes = "Soroswap router, create 2024-03-11 16:23:45 UTC. Wasm 4c3db3ebd2d6a2ab2
 # (fxdao.io/docs/addresses), cross-checked against stellar.expert and Hubble
 # contract_data (2026-08-01). SNAPSHOT-ONLY surface: the vaults contract
 # emits zero contract events by design (no publish call in its source at
-# FxDAO-SC @ b73d8b6), so the fold is contract_data-delta driven only. The
+# FxDAO-SC @ b73d8b6), so state is derived from contract_data deltas only. The
 # protocol's history is FINISHED: the last state-mutating write is ledger
-# 62,645,363 = 2026-05-19T22:14:05Z; a full-history fold is deploy floor ->
-# past that ledger, no tip-chasing.
+# 62,645,363 = 2026-05-19T22:14:05Z; a full-history decode runs from the deploy
+# ledger to past that ledger, with no need to follow the chain head.
 
 [[pin]]
 network = "public"
@@ -154,4 +158,4 @@ contract_id = "CCUN4RXU5VNDHSF4S4RKV4ZJYMX2YWKOH6L4AKEKVNVDQ7HY5QIAO4UB"
 role = "fxdao_vaults"
 deploy_ledger = 51835681
 source = "stellar.expert exact close-time match (HIGH); create_contract ledger"
-notes = "FxDAO vaults, create 2024-05-26 04:14:28 UTC. Storage entries at head: 1 (every vault entry deleted - finished history). THE PROTOCOL FLOOR: a full-history fold starts here."
+notes = "FxDAO vaults, create 2024-05-26 04:14:28 UTC. Storage entries at head: 1 (every vault entry deleted - finished history). THE PROTOCOL FLOOR: a full-history decode starts here."

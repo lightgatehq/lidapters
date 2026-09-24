@@ -30,7 +30,7 @@ func init() {
 	if err := toml.Unmarshal(deployPinsTOML, &file); err != nil {
 		// Embedded canonical data must always parse; a failure is a build-time
 		// data bug, not a runtime condition to recover from.
-		panic(fmt.Sprintf("blend: parse deployments.toml: %v", err))
+		panic(fmt.Sprintf("lidapters: parse deployments.toml: %v", err))
 	}
 	deployPins = file.Pin
 }

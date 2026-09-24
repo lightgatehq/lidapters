@@ -39,7 +39,7 @@ var _ bindings.DirtyBackstopsProvider = (*Adapter)(nil)
 
 // Adapter exposes the skipped-leg diagnostics from its most recent
 // DecodeState/DecodeStateAt call, so a consumer can log and count the position
-// legs the fold could not attribute instead of discovering corrupted rows
+// legs the decoder could not attribute instead of discovering corrupted rows
 // after the fact. See bindings.DecodeDiagnosticsProvider.
 var _ bindings.DecodeDiagnosticsProvider = (*Adapter)(nil)
 
@@ -55,33 +55,33 @@ type Adapter struct {
 	cfg Config
 	// contracts is the owned contract-ID set OwnsContract checks. It is
 	// config-like ownership, not per-ledger scratch, so it does not affect the
-	// DecodeState purity guarantee. Seeded empty; the relay projector feeds
+	// DecodeState purity guarantee. Seeded empty; the caller registers
 	// discovered pools via RegisterContracts.
 	contracts map[string]struct{}
-	// assets is the registered token-contract set: reserve assets the relay edge
-	// feeds via RegisterAssetContracts once a pool's reserve list reveals them.
-	// It is checked ahead of the generic pool-instance branch in the reducer so a
-	// registered asset's instance entry is always decoded on the SAC/SEP-41 path
-	// and never mistaken for a pool — critical for a wasm-backed SEP-41 token,
-	// which would otherwise pass the pool branch's wasm-hash sniff. Same
+	// assets is the registered token-contract set: reserve assets the caller
+	// registers via RegisterAssetContracts once a pool's reserve list reveals
+	// them. It is checked ahead of the generic pool-instance branch in the reducer
+	// so a registered asset's instance entry is always decoded on the SAC/SEP-41
+	// path and never mistaken for a pool — critical for a wasm-backed SEP-41
+	// token, which would otherwise pass the pool branch's wasm-hash sniff. Same
 	// config-like status as contracts; does not affect DecodeState purity.
 	assets map[string]struct{}
-	// feeds is the registered Reflector price-feed set the relay edge fills via
+	// feeds is the registered Reflector price-feed set the caller fills via
 	// RegisterPriceFeeds. A feed's contract_data (per-round price entries plus
 	// the instance's asset list) is routed onto the Reflector decode path ahead
 	// of every other branch — a feed instance carries a wasm executable and
 	// would otherwise be misdecoded as a phantom pool. Same config-like status
 	// as contracts; does not affect DecodeState purity.
 	feeds map[string]struct{}
-	// comets is the registered Comet (BToken) LP contract set the relay edge
+	// comets is the registered Comet (BToken) LP contract set the caller
 	// fills via RegisterCometContracts. A Comet's contract_data (the pool's
 	// AllTokenVec/AllRecordData/TotalShares persistent entries) is routed onto
 	// the Comet decode path (state_comet.go) ahead of every Blend branch.
 	// Deliberately distinct from contracts: Comet state can never decode as
-	// Blend pool state and Blend state never as Comet (D-03). Same config-like
+	// Blend pool state and Blend state never as Comet. Same config-like
 	// status as contracts; does not affect DecodeState purity.
 	comets map[string]struct{}
-	// state is the state-fold strategy DecodeState delegates to, selected once
+	// state is the state-decode strategy DecodeState delegates to, selected once
 	// at New from Config.StateMode and swapped as a whole class — paranoid (the
 	// stateless reference reducer) or incremental (the persistent-builder
 	// optimization). See state_strategy.go for the contract between the two.
@@ -116,7 +116,7 @@ func (a *Adapter) LastDirtyPositions() []bindings.DirtyPosition {
 // valuation inputs the most recent DecodeState/DecodeStateAt call invalidated
 // — holder balance/emission writes, pool PoolBalance writes, linked Comet
 // reserve/supply writes, or BLND/USDC price changes — and whether each pair
-// still has a balance after the fold. See bindings.DirtyBackstopsProvider.
+// still has a balance after the decode. See bindings.DirtyBackstopsProvider.
 func (a *Adapter) LastDirtyBackstops() []bindings.DirtyBackstop {
 	return a.lastDirtyBackstops
 }
@@ -234,10 +234,10 @@ func (a *Adapter) Transform(input bindings.TransformInput) (*bindings.TransformO
 		txHash := evt.TxHash
 		eventIndex := evt.EventIndex
 		if decoded.activityType == contracts.ActivityTypeStatusChange {
-			// Gold's lifecycle_synthetic_identity constraint keys a status change
-			// as a per-ledger contract fact, not a per-event one:
-			// tx_hash = status:<contract>:<ledger>, event_index = 0. The raw
-			// event's tx hash and index would violate the constraint, so emit the
+			// A status change is a per-ledger contract fact, not a per-event one,
+			// and its identity is keyed that way: tx_hash =
+			// status:<contract>:<ledger>, event_index = 0. Carrying the raw
+			// event's tx hash and index would break that invariant, so emit the
 			// synthetic identity (and derive the stable ID from it too, so it stays
 			// deterministic regardless of which raw event carried the change).
 			txHash = statusChangeTxHash(evt.ContractID, evt.LedgerSeq)
@@ -268,10 +268,10 @@ func (a *Adapter) Transform(input bindings.TransformInput) (*bindings.TransformO
 	}
 
 	// Emit tombstones for positions that disappeared since the prior ledger.
-	// The adapter is stateless across ledgers, so the relay passes the prior
-	// ledger's gold Position output via TransformInput.PriorPositions. Any
+	// The adapter is stateless across ledgers, so the caller passes the prior
+	// ledger's Position output via TransformInput.PriorPositions. Any
 	// position ID present in PriorPositions but absent from the current output
-	// is a leg that went to zero or was evicted — emit a tombstone so the relay
+	// is a leg that went to zero or was evicted — emit a tombstone so the caller
 	// can insert an is_deleted=TRUE row at this ledger.
 	emitTombstones(input, out)
 
@@ -281,7 +281,7 @@ func (a *Adapter) Transform(input bindings.TransformInput) (*bindings.TransformO
 // ProjectPositions projects ONLY the given dirty (address, pool) pairs' rows
 // out of state — the per-ledger-emission analog of Transform's full
 // computeState pass, for a consumer that wants just the Positions/Summaries
-// Change 1's Positions dirty set touched this ledger (bindings.DirtyPosition,
+// the Positions dirty set touched this ledger (bindings.DirtyPosition,
 // Adapter.LastDirtyPositions). It reuses computeState verbatim (no duplicated
 // valuation logic): it assembles a filtered LedgerState whose Users slice
 // holds only the dirty pairs' rows and calls computeState on it exactly as
@@ -289,20 +289,20 @@ func (a *Adapter) Transform(input bindings.TransformInput) (*bindings.TransformO
 // needs its pool's full context to value; pool/reserve normalization is
 // O(pools), which does not grow with user count).
 //
-// When the adapter's active state-fold strategy is incremental, gathering the
+// When the adapter's active state-decode strategy is incremental, gathering the
 // dirty rows is an O(1)-per-pair lookup into its own position cache
 // (dirtyUserPositions — see state_strategy.go), so the whole call is
-// O(dirty users), not O(all users): the defect this closes is a consumer
-// projecting all ~11.5k mainnet users on every event ledger. Paranoid mode
+// O(dirty users), not O(all users), so a consumer does not project all ~11.5k
+// mainnet users on every event ledger. Paranoid mode
 // caches nothing, so this falls back to a single scan of state.Users — no
 // worse than paranoid's existing O(total state) per-ledger cost.
 //
-// Backstop deposits are out of scope: Change 2's dirty set tracks Positions
+// Backstop deposits are out of scope: the Positions dirty set tracks Positions
 // entries only, so the returned TransformOutput carries no Backstops-derived
 // rows. The result's Reserves/Contracts/ReserveEmissions still cover every
 // pool (computeState always emits those from state.Pools) and its
 // Activities/Quarantine are always empty (no events are fed in — this is a
-// state-only re-projection, not event replay). A caller doing per-ledger
+// state-only re-projection, not event processing). A caller doing per-ledger
 // position emission should read only Positions and Summaries from the result.
 func (a *Adapter) ProjectPositions(state *bindings.LedgerState, dirty []bindings.DirtyPosition, ledgerSeq int64, closeTime time.Time) (*bindings.TransformOutput, error) {
 	out := &bindings.TransformOutput{
@@ -331,7 +331,7 @@ func (a *Adapter) ProjectPositions(state *bindings.LedgerState, dirty []bindings
 // ProjectBackstopPositions projects ONLY the given dirty (address, pool)
 // backstop pairs' rows out of state — the per-ledger-emission analog of
 // ProjectPositions for the affected-backstop set (bindings.DirtyBackstop,
-// Adapter.LastDirtyBackstops, V1-09 D-10). It reuses computeState verbatim (no
+// Adapter.LastDirtyBackstops). It reuses computeState verbatim (no
 // duplicated valuation logic): a filtered LedgerState whose Backstops slice
 // holds only the dirty pairs' rows and whose Users slice is empty.
 //
@@ -339,7 +339,7 @@ func (a *Adapter) ProjectPositions(state *bindings.LedgerState, dirty []bindings
 // the result: a PositionSummary computed from a backstop-only state carries
 // just the backstop leg of each address, which is a wrong row for every
 // holder with lending positions — summaries stay with the lending projection
-// (ProjectPositions) and the fold-time whole-state pass. Reserves/Contracts
+// (ProjectPositions) and the decode-time whole-state pass. Reserves/Contracts
 // still cover every pool (computeState always emits those from state.Pools)
 // and Activities/Quarantine are always empty (state-only re-projection).
 // Removal pairs have no row in state.Backstops and project nothing; the
@@ -411,9 +411,9 @@ func dirtyPairKey(address, poolContractID string) string {
 	return address + "|" + poolContractID
 }
 
-// statusChangeTxHash builds the synthetic transaction hash gold expects for a
-// contract_status_change activity. It MUST match relay migration 001's
-// lifecycle_synthetic_identity CHECK exactly:
+// statusChangeTxHash builds the synthetic transaction hash a consumer expects
+// for a contract_status_change activity. It MUST match the
+// lifecycle_synthetic_identity CHECK constraint on the stored activity exactly:
 //
 //	tx_hash = 'status:' || contract || ':' || ledger
 //
@@ -447,14 +447,14 @@ func activityIdentityFailure(decoded decodedEvent, evt bindings.RawEventEnvelope
 	return ""
 }
 
-// emitTombstones diffs the prior ledger's gold output against the current
+// emitTombstones diffs the prior ledger's output against the current
 // output and emits PositionTombstones and SummaryTombstones for entities that
 // disappeared. A position leg disappears when it went to zero (the on-chain
 // blob still exists but the leg's amount reached zero and was filtered by
 // positionsFromMap) or when the entire Positions entry was evicted/removed
 // (applyDelete deleted the blob so build() no longer iterates it).
 //
-// The relay passes PriorPositions via TransformInput; we build a set of
+// The caller passes PriorPositions via TransformInput; we build a set of
 // current position IDs and any prior ID not in that set is a tombstone.
 //
 // Summary tombstones are emitted only when an address had a prior summary

@@ -27,7 +27,7 @@ const (
 
 // DecodeState is a pure reducer: (prior, changes, ledgerSeq) -> next. Two
 // passes per ledger — a discovery pass registers pairs from the factory's
-// PairAddressesNIndexed(u32) persistent writes, then the fold pass decodes
+// PairAddressesNIndexed(u32) persistent writes, then the state pass decodes
 // pair instances (raw u32 keys), LP Balance entries and TotalSupply.
 // A Restored change is a live write (the entry came back from archival with
 // its bytes intact); only a Removed change tombstones.
@@ -93,7 +93,7 @@ func (a *Adapter) DecodeState(prior *bindings.LedgerState, changes []bindings.Co
 		if c.ValueXDR == nil || c.ChangeType == "Removed" {
 			// Only a genuine LedgerEntryRemoved change closes a position. A TTL
 			// lapse / network eviction (nil value without Removed) archives: the
-			// last folded state is kept, matching the blend Change-1 doctrine.
+			// last decoded state is kept, matching the Blend adapter's rule.
 			if c.ChangeType == "Removed" {
 				if holder := balanceHolder(key); holder != "" {
 					a.tombstonePosition(positions, c.ContractID, holder)
@@ -132,12 +132,12 @@ func (a *Adapter) DecodeState(prior *bindings.LedgerState, changes []bindings.Co
 						case pairKeyReserve1:
 							upsertToken(&p.Tokens, 1, "", i128String(entry.Val))
 						case pairKeyFactory:
-							// The factory is the pair-discovery authority; the gold
-							// router_contract column carries it.
+							// The factory is the pair-discovery authority;
+							// RouterContract carries it.
 							p.RouterContract = addr(entry.Val)
 						case pairKeyKLast:
 							// Recognized-not-carried: mint_fee accounting internal,
-							// no gold column consumes it.
+							// no output field consumes it.
 						}
 						touched = true
 						continue
