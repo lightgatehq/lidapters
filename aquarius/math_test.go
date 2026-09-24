@@ -17,6 +17,7 @@ func TestProRataFloors(t *testing.T) {
 		t.Fatal("zero total shares accepted")
 	}
 }
+
 // Frozen mainnet reward checkpoints from run-2026-07-18T15-10-48-353Z:
 // deposit ledger 63535435 (close 1784387458), step-4 ledger 63535437 (close
 // 1784387469), withdraw ledger 63535438 (close 1784387475). Expected pending
