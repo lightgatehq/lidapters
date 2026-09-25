@@ -14,7 +14,7 @@ Requires Go 1.25 or later.
 ## Install
 
 ```sh
-go get github.com/lightgatehq/lidapters@v0.16.0
+go get github.com/lightgatehq/lidapters@v0.16.1
 ```
 
 ## Packages
@@ -96,6 +96,9 @@ The module follows semantic versioning and is pre-1.0:
 
 Releases are cut by pushing a `v*` tag; the release workflow builds the module,
 runs the tests and publishes a GitHub release with generated notes.
+
+v0.16.1 is the first tag that carries the LICENSE file; earlier tags fetch the
+same code without it.
 
 ## Contributing
 
